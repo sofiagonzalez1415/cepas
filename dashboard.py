@@ -497,10 +497,17 @@ with tab_vermouth:
         st.caption(f"Martini Rosso vendió {unid_mr/unid_ci*100:.0f}% de las unidades de Cinzano Rosso en el período elegido.")
 
     overlap = M.clientes_overlap(ventas_verm, "Martini Rosso", "Cinzano Rosso", fecha_desde=fv_desde, fecha_hasta=fv_hasta)
+    n_solo_mr, n_ambas, n_solo_ci = len(overlap["solo_a"]), len(overlap["ambas"]), len(overlap["solo_b"])
+    st.markdown(
+        f"**Es el desglose de los {fmt_int(cli_mr)} / {fmt_int(cli_ci)} clientes de arriba:** "
+        f"Martini Rosso = {n_solo_mr} exclusivos + {n_ambas} que compran las dos "
+        f"({n_solo_mr}+{n_ambas}={n_solo_mr + n_ambas}) · Cinzano Rosso = {n_solo_ci} exclusivos + "
+        f"{n_ambas} que compran las dos ({n_solo_ci}+{n_ambas}={n_solo_ci + n_ambas})"
+    )
     oc1, oc2, oc3 = st.columns(3)
-    oc1.metric("Solo compran Martini Rosso", fmt_int(len(overlap["solo_a"])))
-    oc2.metric("Compran las dos marcas", fmt_int(len(overlap["ambas"])))
-    oc3.metric("Solo compran Cinzano Rosso", fmt_int(len(overlap["solo_b"])))
+    oc1.metric("Solo compran Martini Rosso", fmt_int(n_solo_mr))
+    oc2.metric("Compran las dos marcas", fmt_int(n_ambas))
+    oc3.metric("Solo compran Cinzano Rosso", fmt_int(n_solo_ci))
     st.caption(
         "Clientes distintos en el rango de fechas elegido. 'Compran las dos' son clientes "
         "que ya tienen las dos marcas en su surtido — potencial para empujar Martini Rosso "
