@@ -71,17 +71,65 @@ def fmt_pct(n):
         return "—"
 
 
-def tabla_variacion_trimestral(trimestral, col_val="Unidades", fmt_val=None):
-    fmt_val = fmt_val or (fmt_int if col_val == "Unidades" else fmt_money)
+def fmt_share(n):
+    """Como fmt_pct pero sin el signo '+' — para columnas de participación
+    (% del total), no de variación."""
+    if n is None or (isinstance(n, float) and pd.isna(n)):
+        return "—"
+    try:
+        return f"{n*100:.1f}%"
+    except Exception:
+        return "—"
+
+
+def color_var(v):
+    """Verde si la variación es >= 0, rojo si es negativa — para columnas de
+    Var. % en cualquier tabla del tablero."""
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return ""
+    try:
+        return ("background-color: #c6efce; color: #006100" if v >= 0
+                else "background-color: #ffc7ce; color: #9c0006")
+    except Exception:
+        return ""
+
+
+def estilizar_tabla(df, int_cols=None, money_cols=None, share_cols=None, var_cols=None):
+    """Arma un pandas Styler para mostrar una tabla con números formateados
+    (miles con punto, $ con miles, % con un decimal) SIN convertirlos a texto
+    en el DataFrame — Streamlit ordena/filtra sobre el valor crudo aunque la
+    celda se vea formateada, así que esto es lo que mantiene el sort nativo
+    funcionando bien (el bug de 'no ordena bien' era por pre-convertir los
+    números a string antes de pasarlos a st.dataframe). var_cols además se
+    colorea rojo/verde."""
+    fmt = {}
+    for c in (int_cols or []):
+        fmt[c] = fmt_int
+    for c in (money_cols or []):
+        fmt[c] = fmt_money
+    for c in (share_cols or []):
+        fmt[c] = fmt_share
+    for c in (var_cols or []):
+        fmt[c] = fmt_pct
+    styler = df.style.format(fmt)
+    if var_cols:
+        styler = styler.map(color_var, subset=var_cols)
+    return styler
+
+
+def tabla_variacion_trimestral(trimestral, col_val="Unidades"):
     var_qoq_col = "VarUnidades" if col_val == "Unidades" else "VarTotal"
     var_yoy_col = "VarUnidadesYoY" if col_val == "Unidades" else "VarTotalYoY"
     out = pd.DataFrame({
         "Trimestre": trimestral["Etiqueta"],
-        col_val: trimestral[col_val].apply(fmt_val),
-        "Var. trim. anterior": trimestral[var_qoq_col].apply(fmt_pct),
-        "Var. interanual": trimestral[var_yoy_col].apply(fmt_pct),
+        col_val: trimestral[col_val],
+        "Var. trim. anterior": trimestral[var_qoq_col],
+        "Var. interanual": trimestral[var_yoy_col],
     })
-    return out
+    cols_num = [col_val] if col_val == "Unidades" else []
+    cols_money = [col_val] if col_val == "Total" else []
+    return estilizar_tabla(out, int_cols=cols_num, money_cols=cols_money,
+                            var_cols=["Var. trim. anterior", "Var. interanual"])
 
 
 def render_tabla_marca_trimestral(tabla, año):
@@ -241,12 +289,9 @@ with tab_mix:
         fig.update_layout(height=420, margin=dict(t=10, b=10))
         st.plotly_chart(fig, use_container_width=True)
     with col2:
-        tabla = mix.copy()
-        tabla["Total"] = tabla["Total"].apply(fmt_money)
-        tabla["Unidades"] = tabla["Unidades"].apply(fmt_int)
-        tabla["Clientes"] = tabla["Clientes"].apply(fmt_int)
-        tabla["Participacion"] = tabla["Participacion"].apply(lambda x: f"{x*100:.1f}%")
-        st.dataframe(tabla, use_container_width=True, hide_index=True)
+        tabla_estilo = estilizar_tabla(mix, money_cols=["Total"], int_cols=["Unidades", "Clientes"],
+                                        share_cols=["Participacion"])
+        st.dataframe(tabla_estilo, use_container_width=True, hide_index=True)
 
     st.subheader("Mix mensual por marca (unidades, últimos 13 meses)")
     mix_mes = M.evolucion_mensual_por_marca(ventas_mp)
@@ -266,38 +311,16 @@ with tab_mix:
     )
     st.plotly_chart(fig2, use_container_width=True)
 
-    st.markdown("---")
-    año_mix_martini = pd.Timestamp.now().year
-    st.subheader(f"Mix de producto {año_mix_martini} (ene-sept, YTD) — Martini desagregado")
-    st.caption(
-        "Mismo mix de arriba pero 'Martini (otras variantes)' se abre en sus SKU "
-        "individuales (Bianco, Extra Dry) en vez de ir agrupado — y toma SOLO lo que va "
-        "del año en curso (mismo día del año, no todo el histórico)."
-    )
-    mix_desagregado = M.mix_producto_desagregado_martini(ventas, año_mix_martini)
-    colm1, colm2 = st.columns([1, 1])
-    with colm1:
-        figm = go.Figure(go.Pie(
-            labels=mix_desagregado["Etiqueta"], values=mix_desagregado["Unidades"], hole=0.55,
-            textinfo="label+percent",
-        ))
-        figm.update_layout(height=440, margin=dict(t=10, b=10))
-        st.plotly_chart(figm, use_container_width=True)
-    with colm2:
-        tabla_md = mix_desagregado.copy()
-        tabla_md["Total"] = tabla_md["Total"].apply(fmt_money)
-        tabla_md["Unidades"] = tabla_md["Unidades"].apply(fmt_int)
-        tabla_md["Clientes"] = tabla_md["Clientes"].apply(fmt_int)
-        tabla_md["Participacion"] = tabla_md["Participacion"].apply(lambda x: f"{x*100:.1f}%")
-        tabla_md = tabla_md.rename(columns={"Etiqueta": "Marca / Producto"})
-        st.dataframe(tabla_md, use_container_width=True, hide_index=True)
-
 # ── Tab Evolución ────────────────────────────────────────────────────────
 
 with tab_evolucion:
     unidad_vista = st.radio("Ver en", ["Unidades", "Pesos"], horizontal=True, index=0, key="evol_unidad")
     col_val = "Unidades" if unidad_vista == "Unidades" else "Total"
-    fmt_val = fmt_int if unidad_vista == "Unidades" else fmt_money
+    st.caption(
+        "'Unidades' es la cantidad total de botellas vendidas (suma de todas las marcas y "
+        "productos que queden después del filtro de Marcas/Producto de la izquierda) por "
+        "período — no está desglosado por marca acá, para eso está la pestaña Mix de producto."
+    )
 
     st.subheader(f"Evolución mensual ({unidad_vista.lower()})")
     mensual = M.evolucion_mensual(ventas_mp, n_meses=18)
@@ -316,7 +339,7 @@ with tab_evolucion:
                         yaxis=dict(gridcolor=GRID, title=unidad_vista))
     st.plotly_chart(fig2, use_container_width=True)
 
-    st.dataframe(tabla_variacion_trimestral(trimestral, col_val, fmt_val), use_container_width=True, hide_index=True)
+    st.dataframe(tabla_variacion_trimestral(trimestral, col_val), use_container_width=True, hide_index=True)
     st.caption(
         "El último trimestre del año en curso suele estar parcial — compararlo contra "
         "un trimestre cerrado de otro año sobreestima la caída/suba."
@@ -369,35 +392,34 @@ with tab_clientes:
     st.subheader("Clientes a los que vendimos productos Cepas (ranking por facturación)")
     top_n = st.slider("Top N clientes", 10, 100, 25, step=5)
     ranking = M.ranking_clientes(ventas_f, top_n=top_n)
-    tabla = ranking.copy()
-    tabla["Total"] = tabla["Total"].apply(fmt_money)
-    tabla["Unidades"] = tabla["Unidades"].apply(fmt_int)
-    tabla["Participacion"] = tabla["Participacion"].apply(lambda x: f"{x*100:.1f}%")
-    tabla = tabla.rename(columns={"NombreFantasia": "Nombre"})
-    st.dataframe(tabla[["Cliente", "Nombre", "Total", "Unidades", "Comprobantes", "Participacion"]],
-                 use_container_width=True, hide_index=True)
+    tabla = ranking.rename(columns={"NombreFantasia": "Nombre"})
+    tabla = tabla[["Cliente", "Nombre", "Total", "Unidades", "Comprobantes", "Participacion"]]
+    tabla_estilo = estilizar_tabla(tabla, money_cols=["Total"], int_cols=["Unidades", "Comprobantes"],
+                                    share_cols=["Participacion"])
+    st.dataframe(tabla_estilo, use_container_width=True, hide_index=True)
 
 # ── Tab Vermouth vs. competencia ─────────────────────────────────────────
 
 with tab_vermouth:
-    st.subheader("Categoría Vermouth completa — todas las marcas que vendemos, no solo Cepas")
+    st.subheader("Vermouth — todas las marcas que vendemos, no solo Cepas")
     st.caption(
         "Rubro 'Bebidas con alcohol', categoría 'Vermouth' en BSGestión, sin filtrar por "
         "proveedor — así se compara Martini Rosso (Cepas) contra Cinzano y el resto de la "
-        "competencia dentro de la misma categoría de producto."
+        "competencia dentro de la misma categoría de producto. Solo variante Rosso (saca "
+        "Bianco, Extra Dry, Segundo, 1757, To Spritz, Bitter, Blanco, Primavera, Sideral, "
+        "Vincenzo, Antica Formula, Siete Cuatro Seis y Otros vermouth — ninguno tiene "
+        "variante Rosso, no aportan a esta comparación puntual)."
     )
 
     fecha_min_v, fecha_max_v = ventas_verm["Fecha"].min().date(), ventas_verm["Fecha"].max().date()
-    rango_v = st.date_input("Rango de fechas (vermouth)", value=(fecha_min_v, fecha_max_v),
+    hoy_date = pd.Timestamp.now().date()
+    default_desde_v = max(fecha_min_v, pd.Timestamp(year=hoy_date.year, month=1, day=1).date())
+    default_hasta_v = min(fecha_max_v, hoy_date)
+    rango_v = st.date_input("Rango de fechas (vermouth)", value=(default_desde_v, default_hasta_v),
                               min_value=fecha_min_v, max_value=fecha_max_v, key="verm_rango")
     fv_desde, fv_hasta = (rango_v if isinstance(rango_v, tuple) and len(rango_v) == 2
-                           else (fecha_min_v, fecha_max_v))
+                           else (default_desde_v, default_hasta_v))
 
-    st.caption(
-        "Solo variante Rosso (saca Bianco, Extra Dry, Segundo, 1757, To Spritz, Bitter, "
-        "Blanco, Primavera, Sideral, Vincenzo, Antica Formula, Siete Cuatro Seis y Otros "
-        "vermouth — ninguno tiene variante Rosso, no aportan a esta comparación puntual)."
-    )
     ventas_verm_mix = M.filtrar_solo_rosso(ventas_verm)
     ranking_verm = M.ranking_marcas_vermouth(ventas_verm_mix, fecha_desde=fv_desde, fecha_hasta=fv_hasta)
 
@@ -406,18 +428,16 @@ with tab_vermouth:
         fig = go.Figure(go.Pie(
             labels=ranking_verm["MarcaVermouth"], values=ranking_verm["Unidades"], hole=0.55,
             marker_colors=[VERMOUTH_COLORS.get(m, "#898781") for m in ranking_verm["MarcaVermouth"]],
-            textinfo="label+percent",
+            textinfo="percent", textposition="inside",
         ))
-        fig.update_layout(height=440, margin=dict(t=10, b=10))
+        fig.update_layout(height=460, margin=dict(t=10, b=80),
+                           legend=dict(orientation="h", yanchor="top", y=-0.1, font=dict(size=11)))
         st.plotly_chart(fig, use_container_width=True)
     with col2:
-        tabla_v = ranking_verm.copy()
-        tabla_v["Total"] = tabla_v["Total"].apply(fmt_money)
-        tabla_v["Unidades"] = tabla_v["Unidades"].apply(fmt_int)
-        tabla_v["Clientes"] = tabla_v["Clientes"].apply(fmt_int)
-        tabla_v["ParticipacionUnidades"] = tabla_v["ParticipacionUnidades"].apply(lambda x: f"{x*100:.1f}%")
-        tabla_v = tabla_v.rename(columns={"MarcaVermouth": "Marca", "ParticipacionUnidades": "% Unidades"})
-        st.dataframe(tabla_v, use_container_width=True, hide_index=True)
+        tabla_v = ranking_verm.rename(columns={"MarcaVermouth": "Marca", "ParticipacionUnidades": "% Unidades"})
+        tabla_v_estilo = estilizar_tabla(tabla_v, money_cols=["Total"], int_cols=["Unidades", "Clientes"],
+                                          share_cols=["% Unidades"])
+        st.dataframe(tabla_v_estilo, use_container_width=True, hide_index=True)
 
     # NOTA: el ranking de arriba (ranking_verm) ya está filtrado a solo Rosso.
     # Todo lo que sigue en la pestaña (cara a cara, evolución, overlap de
@@ -438,41 +458,25 @@ with tab_vermouth:
     tabla_rosso, total_rosso_prev, total_rosso_act = M.resumen_rosso_ytd_por_marca(ventas_verm, año_rosso)
 
     cr1, cr2 = st.columns(2)
-    cr1.metric(f"Unidades vermouth Rosso YTD {año_rosso}", fmt_int(total_rosso_act),
+    cr1.metric(f"Unidades vermouth Rosso YTD {año_rosso - 1}", fmt_int(total_rosso_prev))
+    cr2.metric(f"Unidades vermouth Rosso YTD {año_rosso}", fmt_int(total_rosso_act),
                fmt_pct(M.var(total_rosso_prev, total_rosso_act)))
-    cr2.metric(f"Unidades vermouth Rosso YTD {año_rosso - 1}", fmt_int(total_rosso_prev))
 
-    tabla_rosso_disp = tabla_rosso.copy()
-    for c in [f"Unidades {año_rosso - 1}", f"Unidades {año_rosso}"]:
-        tabla_rosso_disp[c] = tabla_rosso_disp[c].apply(fmt_int)
-    tabla_rosso_disp["Var. % unidades"] = tabla_rosso_disp["Var. % unidades"].apply(fmt_pct)
-    for c in [f"Participación {año_rosso - 1}", f"Participación {año_rosso}"]:
-        tabla_rosso_disp[c] = tabla_rosso_disp[c].apply(lambda x: f"{x*100:.1f}%")
-    tabla_rosso_disp["Var. participación (pp)"] = tabla_rosso_disp["Var. participación (pp)"].apply(
-        lambda x: f"{x:+.1f} pp"
+    tabla_rosso_estilo = estilizar_tabla(
+        tabla_rosso,
+        int_cols=[f"Unidades {año_rosso - 1}", f"Unidades {año_rosso}"],
+        share_cols=[f"Participación {año_rosso - 1}", f"Participación {año_rosso}"],
+        var_cols=["Var. % unidades"],
     )
-    st.dataframe(tabla_rosso_disp, use_container_width=True, hide_index=True)
-
-    st.markdown("---")
-    st.subheader(f"Cinzano, Martini, Unión Federal, Carpano, Cordero, Lunfa, Ajenjo y La Fuerza — {año_rosso - 1} completo, {año_rosso} YTD")
-    st.caption(
-        "Cada marca en su variante roja: Rosso para Cinzano/Martini/Unión Federal/Carpano/"
-        "Lunfa/Ajenjo/Cordero — La Fuerza no tiene una variante llamada 'Rosso', se usa su "
-        "'Rojo' (VERMOUTH LA FUERZA ROJO) como equivalente. La columna YTD compara el mismo "
-        "día del año en ambos años."
-    )
-    tabla_8marcas = M.tabla_marcas_rosso_anual(ventas_verm, año_actual=año_rosso)
-    tabla_8marcas_disp = tabla_8marcas.copy()
-    for c in [f"Unidades {año_rosso - 1} (año completo)", f"Unidades {año_rosso} (YTD)"]:
-        tabla_8marcas_disp[c] = tabla_8marcas_disp[c].apply(fmt_int)
-    tabla_8marcas_disp["Var. % YTD (mismo período)"] = tabla_8marcas_disp["Var. % YTD (mismo período)"].apply(fmt_pct)
-    st.dataframe(tabla_8marcas_disp, use_container_width=True, hide_index=True)
+    st.dataframe(tabla_rosso_estilo, use_container_width=True, hide_index=True)
 
     st.subheader("Cara a cara: Martini Rosso vs. Cinzano Rosso")
     st.caption(
-        "Comparación específica variante Rosso contra Rosso (no incluye Cinzano Bianco, "
-        "Segundo, 1757 ni To Spritz — esos quedan aparte, en 'Cinzano (otras variantes)', "
-        "para no mezclar peras con manzanas)."
+        f"Período: {fv_desde.strftime('%d/%m/%Y') if hasattr(fv_desde, 'strftime') else fv_desde} al "
+        f"{fv_hasta.strftime('%d/%m/%Y') if hasattr(fv_hasta, 'strftime') else fv_hasta} (el rango de "
+        "fechas elegido arriba). Comparación específica variante Rosso contra Rosso (no incluye "
+        "Cinzano Bianco, Segundo, 1757 ni To Spritz — esos quedan aparte, en 'Cinzano (otras "
+        "variantes)', para no mezclar peras con manzanas)."
     )
 
     fila_mr = ranking_verm[ranking_verm["MarcaVermouth"] == "Martini Rosso"]
@@ -554,12 +558,13 @@ with tab_productos:
     col_valor = "Unidades" if valor_mensual == "Unidades" else "Total"
     ventas_año_actual = ventas[ventas["Fecha"].dt.year == año_actual]
     piv_mensual = M.pivot_mensual_por_producto(ventas_año_actual, valor=col_valor)
-    piv_mensual_disp = piv_mensual.copy()
-    cols_mes = [c for c in piv_mensual_disp.columns if c not in ("Marca", "Producto")]
-    fmt_col = fmt_int if col_valor == "Unidades" else fmt_money
-    for c in cols_mes:
-        piv_mensual_disp[c] = piv_mensual_disp[c].apply(fmt_col)
-    st.dataframe(piv_mensual_disp, use_container_width=True, hide_index=True)
+    cols_mes = [c for c in piv_mensual.columns if c not in ("Marca", "Producto")]
+    piv_mensual_estilo = estilizar_tabla(
+        piv_mensual,
+        int_cols=cols_mes if col_valor == "Unidades" else [],
+        money_cols=cols_mes if col_valor == "Total" else [],
+    )
+    st.dataframe(piv_mensual_estilo, use_container_width=True, hide_index=True)
     st.caption(
         f"Una fila por SKU, una columna por mes calendario de {año_actual} (ene a lo que va del "
         "año) — no respeta el filtro de fecha de la izquierda, para ver siempre el año completo."
@@ -567,16 +572,18 @@ with tab_productos:
 
     st.subheader("Ranking de productos YTD, en unidades")
     ranking_ytd = M.ranking_productos_ytd(ventas, año_actual, marcas=marcas_sel or None, productos=productos_sel or None)
-    tabla_ytd = ranking_ytd.copy()
-    tabla_ytd["Var. % unidades"] = tabla_ytd["VarUnidades"].apply(fmt_pct)
-    tabla_ytd = tabla_ytd.rename(columns={
+    tabla_ytd = ranking_ytd.rename(columns={
         "UnidadesActual": f"Unidades YTD {año_actual}",
         "UnidadesPrev": f"Unidades YTD {año_actual - 1}",
         "CompradoresActual": "Compradores únicos",
+        "VarUnidades": "Var. % unidades",
     })[["Producto", f"Unidades YTD {año_actual - 1}", f"Unidades YTD {año_actual}", "Var. % unidades", "Compradores únicos"]]
-    for c in [f"Unidades YTD {año_actual}", f"Unidades YTD {año_actual - 1}", "Compradores únicos"]:
-        tabla_ytd[c] = tabla_ytd[c].apply(fmt_int)
-    st.dataframe(tabla_ytd, use_container_width=True, hide_index=True)
+    tabla_ytd_estilo = estilizar_tabla(
+        tabla_ytd,
+        int_cols=[f"Unidades YTD {año_actual}", f"Unidades YTD {año_actual - 1}", "Compradores únicos"],
+        var_cols=["Var. % unidades"],
+    )
+    st.dataframe(tabla_ytd_estilo, use_container_width=True, hide_index=True)
 
     productos_disp = sorted(ventas_f["Producto"].unique())
     if productos_disp:

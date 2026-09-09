@@ -135,28 +135,6 @@ def mix_por_marca(ventas, fecha_desde=None, fecha_hasta=None, col_marca="Marca",
     return g.sort_values("_orden").drop(columns="_orden").reset_index(drop=True)
 
 
-def mix_producto_desagregado_martini(ventas, año, fecha_corte=None):
-    """Mix de producto YTD (mismo día del año) del año dado, con 'Martini
-    (otras variantes)' desagregado en sus SKU individuales (Martini Bianco,
-    Martini Extra Dry) en vez de agrupados en un solo bucket — el resto de
-    las marcas (Martini Rosso, Bacardi, Gancia, Amargo Obrero, Otras marcas
-    Cepas) se mantienen agregadas como siempre."""
-    fecha_corte = fecha_corte or pd.Timestamp.now().normalize()
-    doy = fecha_corte.dayofyear
-    ini = pd.Timestamp(year=año, month=1, day=1)
-    fin = ini + pd.Timedelta(days=doy - 1)
-    d = filtrar(ventas, fecha_desde=ini, fecha_hasta=fin).copy()
-    d["Etiqueta"] = d.apply(
-        lambda r: r["Producto"] if r["Marca"] == "Martini (otras variantes)" else r["Marca"], axis=1
-    )
-    g = d.groupby("Etiqueta").agg(
-        Total=("Total", "sum"), Unidades=("Cantidad", "sum"), Clientes=("Cliente", "nunique")
-    ).reset_index()
-    total_gral = g["Total"].sum()
-    g["Participacion"] = g["Total"] / total_gral if total_gral else 0
-    return g.sort_values("Unidades", ascending=False).reset_index(drop=True)
-
-
 # ── Ranking de clientes ──────────────────────────────────────────────────
 
 def ranking_clientes(ventas, fecha_desde=None, fecha_hasta=None, top_n=25):
@@ -510,66 +488,6 @@ def evolucion_trimestral_por_marca_vermouth(ventas_verm, marcas=None):
     g = d.groupby(["Año", "Trim", "MarcaVermouth"]).agg(Unidades=("Cantidad", "sum")).reset_index()
     g["Etiqueta"] = g["Año"].astype(str) + "-Q" + g["Trim"].astype(str)
     return g.sort_values(["Año", "Trim"])
-
-
-# Las 8 marcas de vermouth "rojo/rosso" que Sofia pidió comparar explícitamente
-# (2026-09-09): (etiqueta a mostrar, bucket de MarcaVermouth del que sale, palabra
-# extra a buscar en Producto para quedarse SOLO con la variante roja). None en el
-# 3er campo = el bucket ya es exclusivo de esa variante (no hace falta filtrar más).
-# Nota: Unión Federal, Carpano, Lunfa y Ajenjo tienen Bianco/Bitter/Rojo(-distinto
-# de Rosso en el caso de Ajenjo) mezclados en el mismo bucket de MarcaVermouth, así
-# que necesitan el filtro extra. La Fuerza NO tiene una variante llamada "Rosso" —
-# su rojo se llama "Rojo" (VERMOUTH LA FUERZA ROJO), por eso busca "ROJO", no "ROSSO".
-MARCAS_ROSSO_COMPARACION = [
-    ("Cinzano", "Cinzano Rosso", None),
-    ("Martini", "Martini Rosso", None),
-    ("Unión Federal", "Unión Federal", "ROSSO"),
-    ("Carpano", "Carpano", "ROSSO"),
-    ("Cordero", "Cordero (Mosquita Muerta)", None),
-    ("Lunfa", "Lunfa", "ROSSO"),
-    ("Ajenjo", "Ajenjo (Evo & Ajenjo)", "ROSSO"),
-    ("La Fuerza", "La Fuerza", "ROJO"),
-]
-
-
-def tabla_marcas_rosso_anual(ventas_verm, marcas_def=None, año_actual=None, fecha_corte=None):
-    """Para cada marca de MARCAS_ROSSO_COMPARACION: unidades del año anterior
-    COMPLETO, unidades del año en curso A LA FECHA (YTD), y la variación %
-    YTD (mismo día del año en los dos años, apples-to-apples aunque el año
-    en curso esté incompleto)."""
-    marcas_def = marcas_def or MARCAS_ROSSO_COMPARACION
-    fecha_corte = fecha_corte or pd.Timestamp.now().normalize()
-    año_actual = año_actual or fecha_corte.year
-    año_prev = año_actual - 1
-    doy = fecha_corte.dayofyear
-
-    filas = []
-    for etiqueta, bucket, palabra_extra in marcas_def:
-        d = ventas_verm[ventas_verm["MarcaVermouth"] == bucket]
-        if palabra_extra:
-            d = d[d["Producto"].str.upper().str.contains(palabra_extra, na=False)]
-
-        u_prev_completo = d[d["Fecha"].dt.year == año_prev]["Cantidad"].sum()
-        u_actual_ytd = d[d["Fecha"].dt.year == año_actual]["Cantidad"].sum()
-
-        ini_ytd_prev = pd.Timestamp(year=año_prev, month=1, day=1)
-        fin_ytd_prev = ini_ytd_prev + pd.Timedelta(days=doy - 1)
-        u_ytd_prev = d[(d["Fecha"] >= ini_ytd_prev) & (d["Fecha"] <= fin_ytd_prev)]["Cantidad"].sum()
-
-        filas.append({
-            "Marca": etiqueta,
-            f"Unidades {año_prev} (año completo)": u_prev_completo,
-            f"Unidades {año_actual} (YTD)": u_actual_ytd,
-            "Var. % YTD (mismo período)": var(u_ytd_prev, u_actual_ytd),
-        })
-    tabla = pd.DataFrame(filas)
-    total = {
-        "Marca": "Total",
-        f"Unidades {año_prev} (año completo)": tabla[f"Unidades {año_prev} (año completo)"].sum(),
-        f"Unidades {año_actual} (YTD)": tabla[f"Unidades {año_actual} (YTD)"].sum(),
-        "Var. % YTD (mismo período)": None,
-    }
-    return pd.concat([tabla, pd.DataFrame([total])], ignore_index=True)
 
 
 # ── Ventas vs Compras ────────────────────────────────────────────────────
