@@ -63,7 +63,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # TODO (setup inicial): reemplazar por el ID real de la carpeta de Drive
 # "Cepas" creada para este proyecto y compartida como Editor con la Service
 # Account cheques@horacio-pagos.iam.gserviceaccount.com (ver CLAUDE.md).
-DRIVE_FOLDER_ID = "PENDIENTE_CREAR_CARPETA_DRIVE"
+DRIVE_FOLDER_ID = "1al-GEctDtC-oIgXWPzlmxNqzKlp30wmq"
 SERVICE_ACCOUNT_FILE = "service_account.json"
 PANEL_FILENAME = "panel_cepas.xlsx"
 

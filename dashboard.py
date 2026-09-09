@@ -18,7 +18,7 @@ import metrics as M
 
 st.set_page_config(page_title="Panel Cepas", page_icon="🍸", layout="wide")
 
-DRIVE_FOLDER_ID = "PENDIENTE_CREAR_CARPETA_DRIVE"
+DRIVE_FOLDER_ID = "1al-GEctDtC-oIgXWPzlmxNqzKlp30wmq"
 PANEL_FILENAME = "panel_cepas.xlsx"
 
 # ── Tokens de color ──────────────────────────────────────────────────────
