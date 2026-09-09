@@ -266,6 +266,32 @@ with tab_mix:
     )
     st.plotly_chart(fig2, use_container_width=True)
 
+    st.markdown("---")
+    año_mix_martini = pd.Timestamp.now().year
+    st.subheader(f"Mix de producto {año_mix_martini} (ene-sept, YTD) — Martini desagregado")
+    st.caption(
+        "Mismo mix de arriba pero 'Martini (otras variantes)' se abre en sus SKU "
+        "individuales (Bianco, Extra Dry) en vez de ir agrupado — y toma SOLO lo que va "
+        "del año en curso (mismo día del año, no todo el histórico)."
+    )
+    mix_desagregado = M.mix_producto_desagregado_martini(ventas, año_mix_martini)
+    colm1, colm2 = st.columns([1, 1])
+    with colm1:
+        figm = go.Figure(go.Pie(
+            labels=mix_desagregado["Etiqueta"], values=mix_desagregado["Unidades"], hole=0.55,
+            textinfo="label+percent",
+        ))
+        figm.update_layout(height=440, margin=dict(t=10, b=10))
+        st.plotly_chart(figm, use_container_width=True)
+    with colm2:
+        tabla_md = mix_desagregado.copy()
+        tabla_md["Total"] = tabla_md["Total"].apply(fmt_money)
+        tabla_md["Unidades"] = tabla_md["Unidades"].apply(fmt_int)
+        tabla_md["Clientes"] = tabla_md["Clientes"].apply(fmt_int)
+        tabla_md["Participacion"] = tabla_md["Participacion"].apply(lambda x: f"{x*100:.1f}%")
+        tabla_md = tabla_md.rename(columns={"Etiqueta": "Marca / Producto"})
+        st.dataframe(tabla_md, use_container_width=True, hide_index=True)
+
 # ── Tab Evolución ────────────────────────────────────────────────────────
 
 with tab_evolucion:
@@ -367,7 +393,13 @@ with tab_vermouth:
     fv_desde, fv_hasta = (rango_v if isinstance(rango_v, tuple) and len(rango_v) == 2
                            else (fecha_min_v, fecha_max_v))
 
-    ranking_verm = M.ranking_marcas_vermouth(ventas_verm, fecha_desde=fv_desde, fecha_hasta=fv_hasta)
+    st.caption(
+        "Solo variante Rosso (saca Bianco, Extra Dry, Segundo, 1757, To Spritz, Bitter, "
+        "Blanco, Primavera, Sideral, Vincenzo, Antica Formula, Siete Cuatro Seis y Otros "
+        "vermouth — ninguno tiene variante Rosso, no aportan a esta comparación puntual)."
+    )
+    ventas_verm_mix = M.filtrar_solo_rosso(ventas_verm)
+    ranking_verm = M.ranking_marcas_vermouth(ventas_verm_mix, fecha_desde=fv_desde, fecha_hasta=fv_hasta)
 
     col1, col2 = st.columns([1, 1])
     with col1:
@@ -387,7 +419,55 @@ with tab_vermouth:
         tabla_v = tabla_v.rename(columns={"MarcaVermouth": "Marca", "ParticipacionUnidades": "% Unidades"})
         st.dataframe(tabla_v, use_container_width=True, hide_index=True)
 
+    # NOTA: el ranking de arriba (ranking_verm) ya está filtrado a solo Rosso.
+    # Todo lo que sigue en la pestaña (cara a cara, evolución, overlap de
+    # clientes) sigue usando ventas_verm completo a propósito, salvo donde
+    # se indique lo contrario — son comparaciones puntuales Martini Rosso vs
+    # Cinzano Rosso, no dependen del recorte de arriba.
+
     st.markdown("---")
+    st.subheader(f"Evolución YTD: vermouth Rosso, {pd.Timestamp.now().year} vs. {pd.Timestamp.now().year - 1}")
+    st.caption(
+        "SOLO productos 'Rosso' (Martini Rosso, Cinzano Rosso, Carpano Rosso, Lunfa Rosso, "
+        "Unión Federal Rosso, Ajenjo Rosso, Cordero CPL Rosso) — mismo día del año en ambos "
+        "años, para comparar parejo aunque el año en curso esté incompleto. Muestra cuánto "
+        "creció/cayó el total de la categoría Rosso en unidades, y cómo cambió la "
+        "participación de cada marca dentro de ese total."
+    )
+    año_rosso = pd.Timestamp.now().year
+    tabla_rosso, total_rosso_prev, total_rosso_act = M.resumen_rosso_ytd_por_marca(ventas_verm, año_rosso)
+
+    cr1, cr2 = st.columns(2)
+    cr1.metric(f"Unidades vermouth Rosso YTD {año_rosso}", fmt_int(total_rosso_act),
+               fmt_pct(M.var(total_rosso_prev, total_rosso_act)))
+    cr2.metric(f"Unidades vermouth Rosso YTD {año_rosso - 1}", fmt_int(total_rosso_prev))
+
+    tabla_rosso_disp = tabla_rosso.copy()
+    for c in [f"Unidades {año_rosso - 1}", f"Unidades {año_rosso}"]:
+        tabla_rosso_disp[c] = tabla_rosso_disp[c].apply(fmt_int)
+    tabla_rosso_disp["Var. % unidades"] = tabla_rosso_disp["Var. % unidades"].apply(fmt_pct)
+    for c in [f"Participación {año_rosso - 1}", f"Participación {año_rosso}"]:
+        tabla_rosso_disp[c] = tabla_rosso_disp[c].apply(lambda x: f"{x*100:.1f}%")
+    tabla_rosso_disp["Var. participación (pp)"] = tabla_rosso_disp["Var. participación (pp)"].apply(
+        lambda x: f"{x:+.1f} pp"
+    )
+    st.dataframe(tabla_rosso_disp, use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+    st.subheader(f"Cinzano, Martini, Unión Federal, Carpano, Cordero, Lunfa, Ajenjo y La Fuerza — {año_rosso - 1} completo, {año_rosso} YTD")
+    st.caption(
+        "Cada marca en su variante roja: Rosso para Cinzano/Martini/Unión Federal/Carpano/"
+        "Lunfa/Ajenjo/Cordero — La Fuerza no tiene una variante llamada 'Rosso', se usa su "
+        "'Rojo' (VERMOUTH LA FUERZA ROJO) como equivalente. La columna YTD compara el mismo "
+        "día del año en ambos años."
+    )
+    tabla_8marcas = M.tabla_marcas_rosso_anual(ventas_verm, año_actual=año_rosso)
+    tabla_8marcas_disp = tabla_8marcas.copy()
+    for c in [f"Unidades {año_rosso - 1} (año completo)", f"Unidades {año_rosso} (YTD)"]:
+        tabla_8marcas_disp[c] = tabla_8marcas_disp[c].apply(fmt_int)
+    tabla_8marcas_disp["Var. % YTD (mismo período)"] = tabla_8marcas_disp["Var. % YTD (mismo período)"].apply(fmt_pct)
+    st.dataframe(tabla_8marcas_disp, use_container_width=True, hide_index=True)
+
     st.subheader("Cara a cara: Martini Rosso vs. Cinzano Rosso")
     st.caption(
         "Comparación específica variante Rosso contra Rosso (no incluye Cinzano Bianco, "
@@ -437,10 +517,23 @@ with tab_vermouth:
                          use_container_width=True, hide_index=True)
 
     st.markdown("---")
-    st.subheader("Evolución trimestral: Martini Rosso vs. Cinzano Rosso (unidades)")
+    st.subheader("Evolución: Martini Rosso vs. Cinzano Rosso (unidades)")
     marcas_evol = st.multiselect("Marcas a comparar", ranking_verm["MarcaVermouth"].tolist(),
                                    default=[m for m in ["Martini Rosso", "Cinzano Rosso"] if m in ranking_verm["MarcaVermouth"].tolist()])
     if marcas_evol:
+        st.markdown("**Mes a mes**")
+        evol_verm_mes = M.evolucion_mensual_por_marca_vermouth(ventas_verm, marcas=marcas_evol, n_meses=18)
+        fig_mes = go.Figure()
+        for marca in marcas_evol:
+            d = evol_verm_mes[evol_verm_mes["MarcaVermouth"] == marca]
+            fig_mes.add_scatter(x=d["Etiqueta"], y=d["Unidades"], mode="lines+markers", name=marca,
+                                 line=dict(color=VERMOUTH_COLORS.get(marca, "#898781"), width=2), marker=dict(size=6))
+        fig_mes.update_layout(height=380, margin=dict(t=10, b=10), plot_bgcolor="white",
+                               yaxis=dict(gridcolor=GRID, title="Unidades"),
+                               legend=dict(orientation="h", yanchor="bottom", y=1.02))
+        st.plotly_chart(fig_mes, use_container_width=True)
+
+        st.markdown("**Por trimestre**")
         evol_verm = M.evolucion_trimestral_por_marca_vermouth(ventas_verm, marcas=marcas_evol)
         fig3 = go.Figure()
         for marca in marcas_evol:
@@ -456,10 +549,11 @@ with tab_vermouth:
 with tab_productos:
     año_actual = pd.Timestamp.now().year
 
-    st.subheader("Resultados mensuales, por SKU (todos los productos Cepas)")
+    st.subheader(f"Resultados mensuales, por SKU — {año_actual} (todos los productos Cepas)")
     valor_mensual = st.radio("Ver en", ["Unidades", "Pesos"], horizontal=True, index=0, key="mensual_sku_valor")
     col_valor = "Unidades" if valor_mensual == "Unidades" else "Total"
-    piv_mensual = M.pivot_mensual_por_producto(ventas, valor=col_valor)
+    ventas_año_actual = ventas[ventas["Fecha"].dt.year == año_actual]
+    piv_mensual = M.pivot_mensual_por_producto(ventas_año_actual, valor=col_valor)
     piv_mensual_disp = piv_mensual.copy()
     cols_mes = [c for c in piv_mensual_disp.columns if c not in ("Marca", "Producto")]
     fmt_col = fmt_int if col_valor == "Unidades" else fmt_money
@@ -467,8 +561,8 @@ with tab_productos:
         piv_mensual_disp[c] = piv_mensual_disp[c].apply(fmt_col)
     st.dataframe(piv_mensual_disp, use_container_width=True, hide_index=True)
     st.caption(
-        "Una fila por SKU, una columna por mes calendario — todo el histórico disponible "
-        "(no respeta el filtro de fecha de la izquierda, para poder ver la serie completa)."
+        f"Una fila por SKU, una columna por mes calendario de {año_actual} (ene a lo que va del "
+        "año) — no respeta el filtro de fecha de la izquierda, para ver siempre el año completo."
     )
 
     st.subheader("Ranking de productos YTD, en unidades")
@@ -483,17 +577,6 @@ with tab_productos:
     for c in [f"Unidades YTD {año_actual}", f"Unidades YTD {año_actual - 1}", "Compradores únicos"]:
         tabla_ytd[c] = tabla_ytd[c].apply(fmt_int)
     st.dataframe(tabla_ytd, use_container_width=True, hide_index=True)
-
-    st.subheader("Ranking completo (todo el histórico filtrado), en unidades")
-    ranking_prod = M.ranking_productos(ventas_f).sort_values("Unidades", ascending=False)
-    tabla = ranking_prod.copy()
-    tabla["Unidades"] = tabla["Unidades"].apply(fmt_int)
-    tabla["Total"] = tabla["Total"].apply(fmt_money)
-    tabla["PrecioProm"] = tabla["PrecioProm"].apply(fmt_money)
-    tabla["Compradores"] = tabla["Compradores"].apply(fmt_int)
-    tabla = tabla.rename(columns={"Compradores": "Compradores únicos"})
-    st.dataframe(tabla[["Marca", "Producto", "Unidades", "Compradores únicos", "Total", "PrecioProm"]],
-                 use_container_width=True, hide_index=True)
 
     productos_disp = sorted(ventas_f["Producto"].unique())
     if productos_disp:
