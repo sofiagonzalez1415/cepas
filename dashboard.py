@@ -239,7 +239,7 @@ ventas_mp = M.filtrar(ventas, marcas=marcas_sel or None, productos=productos_sel
 compras_mp = M.filtrar(compras, marcas=marcas_sel or None, productos=productos_sel or None)
 
 tab_resumen, tab_mix, tab_evolucion, tab_clientes, tab_vermouth, tab_productos, tab_compras = st.tabs(
-    ["Resumen", "Mix de producto", "Evolución", "Clientes", "Vermouth vs. competencia",
+    ["Resumen", "Mix de producto", "Evolución", "Clientes", "Vermouth",
      "Detalle por producto", "Compras vs Ventas"]
 )
 
@@ -472,12 +472,13 @@ with tab_vermouth:
     st.dataframe(tabla_rosso_estilo, use_container_width=True, hide_index=True)
 
     st.subheader("Cara a cara: Martini Rosso vs. Cinzano Rosso")
+    _fv_desde_str = fv_desde.strftime("%d/%m/%Y") if hasattr(fv_desde, "strftime") else fv_desde
+    _fv_hasta_str = fv_hasta.strftime("%d/%m/%Y") if hasattr(fv_hasta, "strftime") else fv_hasta
+    st.info(f"📅 **Período: {_fv_desde_str} al {_fv_hasta_str}** (el rango de fechas elegido arriba de la pestaña)")
     st.caption(
-        f"Período: {fv_desde.strftime('%d/%m/%Y') if hasattr(fv_desde, 'strftime') else fv_desde} al "
-        f"{fv_hasta.strftime('%d/%m/%Y') if hasattr(fv_hasta, 'strftime') else fv_hasta} (el rango de "
-        "fechas elegido arriba). Comparación específica variante Rosso contra Rosso (no incluye "
-        "Cinzano Bianco, Segundo, 1757 ni To Spritz — esos quedan aparte, en 'Cinzano (otras "
-        "variantes)', para no mezclar peras con manzanas)."
+        "Comparación específica variante Rosso contra Rosso (no incluye Cinzano Bianco, "
+        "Segundo, 1757 ni To Spritz — esos quedan aparte, en 'Cinzano (otras variantes)', "
+        "para no mezclar peras con manzanas)."
     )
 
     fila_mr = ranking_verm[ranking_verm["MarcaVermouth"] == "Martini Rosso"]
@@ -592,8 +593,8 @@ with tab_productos:
 
         pytd = M.producto_ytd(ventas, prod_sel, año_actual)
         c1, c2 = st.columns(2)
-        c1.metric(f"Unidades YTD {año_actual}", fmt_int(pytd["unid_actual"]), fmt_pct(pytd["var_unid"]))
-        c2.metric(f"Unidades YTD {año_actual - 1}", fmt_int(pytd["unid_prev"]))
+        c1.metric(f"Unidades YTD {año_actual - 1}", fmt_int(pytd["unid_prev"]))
+        c2.metric(f"Unidades YTD {año_actual}", fmt_int(pytd["unid_actual"]), fmt_pct(pytd["var_unid"]))
 
         st.markdown("**Evolución mensual (unidades)**")
         serie = M.producto_comparativo(ventas, prod_sel)
