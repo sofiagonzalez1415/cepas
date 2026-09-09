@@ -1,0 +1,8 @@
+service_account.json
+panel_cepas.xlsx
+extract_log.txt
+__pycache__/
+*.pyc
+.streamlit/secrets.toml
+Analisis_Cepas_*.xlsx
+_build_report.py
