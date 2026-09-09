@@ -127,8 +127,8 @@ def mix_por_marca(ventas, fecha_desde=None, fecha_hasta=None, col_marca="Marca",
     d = filtrar(ventas, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta, col_marca=col_marca)
     g = d.groupby(col_marca).agg(Total=("Total", "sum"), Unidades=("Cantidad", "sum"),
                                   Clientes=("Cliente", "nunique")).reset_index()
-    total_gral = g["Total"].sum()
-    g["Participacion"] = g["Total"] / total_gral if total_gral else 0
+    total_gral = g["Unidades"].sum()
+    g["Participacion"] = g["Unidades"] / total_gral if total_gral else 0
     orden = orden or ORDEN_MARCAS
     orden_map = {m: i for i, m in enumerate(orden)}
     g["_orden"] = g[col_marca].map(orden_map).fillna(99)
@@ -144,8 +144,8 @@ def ranking_clientes(ventas, fecha_desde=None, fecha_hasta=None, top_n=25):
         Total=("Total", "sum"), Unidades=("Cantidad", "sum"),
         Comprobantes=("NroComprobante", "nunique"),
     ).reset_index()
-    total_gral = g["Total"].sum()
-    g["Participacion"] = g["Total"] / total_gral if total_gral else 0
+    total_gral = g["Unidades"].sum()
+    g["Participacion"] = g["Unidades"] / total_gral if total_gral else 0
     return g.sort_values("Total", ascending=False).head(top_n).reset_index(drop=True)
 
 

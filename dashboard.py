@@ -282,15 +282,16 @@ with tab_mix:
     col1, col2 = st.columns([1, 1])
     with col1:
         fig = go.Figure(go.Pie(
-            labels=mix["Marca"], values=mix["Total"], hole=0.55,
+            labels=mix["Marca"], values=mix["Unidades"], hole=0.55,
             marker_colors=[MARCA_COLORS.get(m, "#898781") for m in mix["Marca"]],
             textinfo="label+percent",
         ))
         fig.update_layout(height=420, margin=dict(t=10, b=10))
         st.plotly_chart(fig, use_container_width=True)
     with col2:
-        tabla_estilo = estilizar_tabla(mix, money_cols=["Total"], int_cols=["Unidades", "Clientes"],
-                                        share_cols=["Participacion"])
+        tabla_mix = mix.rename(columns={"Participacion": "% Unidades"})
+        tabla_estilo = estilizar_tabla(tabla_mix, money_cols=["Total"], int_cols=["Unidades", "Clientes"],
+                                        share_cols=["% Unidades"])
         st.dataframe(tabla_estilo, use_container_width=True, hide_index=True)
 
     st.subheader("Mix mensual por marca (unidades, últimos 13 meses)")
@@ -392,10 +393,10 @@ with tab_clientes:
     st.subheader("Clientes a los que vendimos productos Cepas (ranking por facturación)")
     top_n = st.slider("Top N clientes", 10, 100, 25, step=5)
     ranking = M.ranking_clientes(ventas_f, top_n=top_n)
-    tabla = ranking.rename(columns={"NombreFantasia": "Nombre"})
-    tabla = tabla[["Cliente", "Nombre", "Total", "Unidades", "Comprobantes", "Participacion"]]
+    tabla = ranking.rename(columns={"NombreFantasia": "Nombre", "Participacion": "% Unidades"})
+    tabla = tabla[["Cliente", "Nombre", "Total", "Unidades", "Comprobantes", "% Unidades"]]
     tabla_estilo = estilizar_tabla(tabla, money_cols=["Total"], int_cols=["Unidades", "Comprobantes"],
-                                    share_cols=["Participacion"])
+                                    share_cols=["% Unidades"])
     st.dataframe(tabla_estilo, use_container_width=True, hide_index=True)
 
 # ── Tab Vermouth vs. competencia ─────────────────────────────────────────
