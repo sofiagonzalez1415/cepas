@@ -431,6 +431,61 @@ def resumen_rosso_ytd_por_marca(ventas_verm, año, fecha_corte=None):
     tabla = pd.concat([tabla, pd.DataFrame([total_fila])], ignore_index=True)
     return tabla, total_prev, total_actual
 
+def resumen_anual_marca_vermouth(ventas_verm, marca, año, fecha_corte=None):
+    """Facturación y unidades del año anterior (año completo cerrado) y del
+    año en curso (YTD al mismo día), para una marca de vermouth puntual
+    (ej. Martini Rosso) — más variación mensual (último mes cerrado vs. el
+    anterior), interanual (ese mismo mes vs. un año atrás) y YTD (año en
+    curso vs año anterior, mismo día). Pensada para las tarjetas resumen de
+    la pestaña Vermouth."""
+    fecha_corte = fecha_corte or pd.Timestamp.now().normalize()
+    d = ventas_verm[ventas_verm["MarcaVermouth"] == marca]
+
+    ini_prev, fin_prev = pd.Timestamp(año - 1, 1, 1), pd.Timestamp(año - 1, 12, 31)
+    d_prev = d[(d["Fecha"] >= ini_prev) & (d["Fecha"] <= fin_prev)]
+    total_año_prev, unid_año_prev = d_prev["Total"].sum(), d_prev["Cantidad"].sum()
+
+    doy = fecha_corte.dayofyear
+
+    def _ytd(año_x):
+        ini = pd.Timestamp(año_x, 1, 1)
+        fin = ini + pd.Timedelta(days=doy - 1)
+        dd = d[(d["Fecha"] >= ini) & (d["Fecha"] <= fin)]
+        return dd["Total"].sum(), dd["Cantidad"].sum()
+
+    total_ytd_act, unid_ytd_act = _ytd(año)
+    total_ytd_prev, unid_ytd_prev = _ytd(año - 1)
+
+    dm = d.copy()
+    dm["Periodo"] = dm["Fecha"].dt.to_period("M")
+    mensual = dm.groupby("Periodo").agg(Total=("Total", "sum"), Unidades=("Cantidad", "sum"))
+
+    def _mes(periodo):
+        if periodo in mensual.index:
+            return mensual.loc[periodo, "Total"], mensual.loc[periodo, "Unidades"]
+        return 0.0, 0.0
+
+    periodo_actual = fecha_corte.to_period("M")
+    ult_cerrado = periodo_actual - 1
+    penult_cerrado = periodo_actual - 2
+    mismo_mes_año_ant = ult_cerrado - 12
+
+    total_ult, unid_ult = _mes(ult_cerrado)
+    total_penult, unid_penult = _mes(penult_cerrado)
+    total_ia, unid_ia = _mes(mismo_mes_año_ant)
+
+    return {
+        "total_año_prev": total_año_prev, "unid_año_prev": unid_año_prev,
+        "total_ytd_act": total_ytd_act, "unid_ytd_act": unid_ytd_act,
+        "var_mensual_total": var(total_penult, total_ult),
+        "var_mensual_unid": var(unid_penult, unid_ult),
+        "var_interanual_total": var(total_ia, total_ult),
+        "var_interanual_unid": var(unid_ia, unid_ult),
+        "var_ytd_total": var(total_ytd_prev, total_ytd_act),
+        "var_ytd_unid": var(unid_ytd_prev, unid_ytd_act),
+    }
+
+
 def ranking_marcas_vermouth(ventas_verm, fecha_desde=None, fecha_hasta=None):
     """Unidades, clientes distintos y facturación por marca de vermouth —
     para comparar Martini Rosso contra Cinzano y el resto del rubro."""
