@@ -82,40 +82,6 @@ def fmt_share(n):
         return "—"
 
 
-def kpi_card(col, label, value, var_pct=None, sub=None):
-    """Tarjeta KPI con estilo propio (borde, acento de color, número grande
-    y un badge de variación redondeado) — más prolija que el st.metric
-    default de Streamlit para las tarjetas resumen de la pestaña Vermouth."""
-    badge_html = ""
-    if var_pct is not None and not (isinstance(var_pct, float) and pd.isna(var_pct)):
-        positivo = var_pct >= 0
-        bg, fg = ("#c6efce", "#006100") if positivo else ("#ffc7ce", "#9c0006")
-        flecha = "▲" if positivo else "▼"
-        badge_html = (
-            f'<span style="display:inline-block;margin-top:8px;padding:2px 10px;'
-            f'border-radius:999px;background:{bg};color:{fg};font-size:12px;font-weight:700;">'
-            f'{flecha} {fmt_pct(var_pct)}</span>'
-        )
-    sub_html = (
-        f'<div style="margin-top:8px;font-size:11.5px;color:{TEXT_SECONDARY};line-height:1.5;">{sub}</div>'
-        if sub else ""
-    )
-    col.markdown(
-        f"""
-        <div style="border:1px solid {GRID};border-top:3px solid {ACCENT};border-radius:12px;
-                    padding:16px 18px;background:white;height:100%;">
-            <div style="font-size:12px;font-weight:600;color:{TEXT_SECONDARY};
-                        text-transform:uppercase;letter-spacing:.04em;">{label}</div>
-            <div style="font-size:28px;font-weight:700;color:#1c1b19;margin-top:4px;
-                        line-height:1.15;">{value}</div>
-            {badge_html}
-            {sub_html}
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
 def color_var(v):
     """Verde si la variación es >= 0, rojo si es negativa — para columnas de
     Var. % en cualquier tabla del tablero."""
@@ -428,25 +394,25 @@ with tab_vermouth:
     st.subheader("Vermouth")
 
     año_cards = pd.Timestamp.now().year
-    resumen_cat = M.resumen_anual_categoria_rosso(ventas_verm, año_cards)
+    resumen_cat = M.resumen_anual_categoria_vermouth(ventas_verm, año_cards)
     cc1, cc2, cc3, cc4 = st.columns(4)
-    kpi_card(cc1, f"Facturación {año_cards - 1}", fmt_money(resumen_cat["total_año_prev"]),
-             sub="Categoría Vermouth Rosso, año completo")
-    kpi_card(cc2, f"Unidades {año_cards - 1}", fmt_int(resumen_cat["unid_año_prev"]),
-             sub="Categoría Vermouth Rosso, año completo")
-    kpi_card(
-        cc3, f"Facturación YTD {año_cards}", fmt_money(resumen_cat["total_ytd_act"]),
-        var_pct=resumen_cat["var_ytd_total"],
-        sub=f"Var. YTD vs. {año_cards - 1} · Var. mensual: {fmt_pct(resumen_cat['var_mensual_total'])} "
-            f"· Var. interanual: {fmt_pct(resumen_cat['var_interanual_total'])}",
-    )
-    kpi_card(
-        cc4, f"Unidades YTD {año_cards}", fmt_int(resumen_cat["unid_ytd_act"]),
-        var_pct=resumen_cat["var_ytd_unid"],
-        sub=f"Var. YTD vs. {año_cards - 1} · Var. mensual: {fmt_pct(resumen_cat['var_mensual_unid'])} "
-            f"· Var. interanual: {fmt_pct(resumen_cat['var_interanual_unid'])}",
-    )
-    st.caption("Categoría Vermouth Rosso completa — Martini Rosso, Cinzano Rosso y el resto de las marcas juntas.")
+    with cc1.container(border=True):
+        st.metric(f"Facturación {año_cards - 1}", fmt_money(resumen_cat["total_año_prev"]))
+    with cc2.container(border=True):
+        st.metric(f"Unidades {año_cards - 1}", fmt_int(resumen_cat["unid_año_prev"]))
+    with cc3.container(border=True):
+        st.metric(f"Facturación YTD {año_cards}", fmt_money(resumen_cat["total_ytd_act"]))
+        vm1, vm2, vm3 = st.columns(3)
+        vm1.metric("Mensual", "", fmt_pct(resumen_cat["var_mensual_total"]))
+        vm2.metric("Interanual", "", fmt_pct(resumen_cat["var_interanual_total"]))
+        vm3.metric("Acumulado", "", fmt_pct(resumen_cat["var_ytd_total"]))
+    with cc4.container(border=True):
+        st.metric(f"Unidades YTD {año_cards}", fmt_int(resumen_cat["unid_ytd_act"]))
+        vu1, vu2, vu3 = st.columns(3)
+        vu1.metric("Mensual", "", fmt_pct(resumen_cat["var_mensual_unid"]))
+        vu2.metric("Interanual", "", fmt_pct(resumen_cat["var_interanual_unid"]))
+        vu3.metric("Acumulado", "", fmt_pct(resumen_cat["var_ytd_unid"]))
+    st.caption("Categoría Vermouth completa (todas las variantes) — Martini Rosso, Cinzano y el resto de las marcas juntas.")
 
     fecha_min_v, fecha_max_v = ventas_verm["Fecha"].min().date(), ventas_verm["Fecha"].max().date()
     hoy_date = pd.Timestamp.now().date()

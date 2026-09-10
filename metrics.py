@@ -431,17 +431,18 @@ def resumen_rosso_ytd_por_marca(ventas_verm, año, fecha_corte=None):
     tabla = pd.concat([tabla, pd.DataFrame([total_fila])], ignore_index=True)
     return tabla, total_prev, total_actual
 
-def resumen_anual_categoria_rosso(ventas_verm, año, fecha_corte=None):
+def resumen_anual_categoria_vermouth(ventas_verm, año, fecha_corte=None):
     """Facturación y unidades del año anterior (año completo cerrado) y del
-    año en curso (YTD al mismo día), para TODA la categoría Vermouth Rosso
-    (todas las marcas juntas: Martini Rosso, Cinzano Rosso, Carpano Rosso,
-    Lunfa Rosso, etc. — la categoría completa que se compara contra la
-    competencia, no solo Cepas) — más variación mensual (último mes cerrado
-    vs. el anterior), interanual (ese mismo mes vs. un año atrás) y YTD
-    (año en curso vs año anterior, mismo día). Pensada para las tarjetas
-    resumen de la pestaña Vermouth."""
+    año en curso (YTD al mismo día), para TODA la categoría Vermouth (todas
+    las marcas y variantes juntas: Martini Rosso, Bianco y Extra Dry,
+    Cinzano en todas sus variantes, Carpano, Lunfa, Unión Federal, etc. —
+    la categoría completa que se compara contra la competencia, no solo
+    Cepas ni solo la variante Rosso) — más variación mensual (último mes
+    cerrado vs. el anterior), interanual (ese mismo mes vs. un año atrás) y
+    YTD (año en curso vs año anterior, mismo día). Pensada para las
+    tarjetas resumen de la pestaña Vermouth."""
     fecha_corte = fecha_corte or pd.Timestamp.now().normalize()
-    d = filtrar_solo_rosso(ventas_verm)
+    d = ventas_verm
 
     ini_prev, fin_prev = pd.Timestamp(año - 1, 1, 1), pd.Timestamp(año - 1, 12, 31)
     d_prev = d[(d["Fecha"] >= ini_prev) & (d["Fecha"] <= fin_prev)]
