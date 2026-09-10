@@ -88,8 +88,9 @@ def fila_variaciones(vals):
             flecha = "▲" if positivo else "▼"
             txt = f"{flecha} {fmt_pct(v)}"
         partes.append(
-            f'<div style="flex:1;min-width:0;"><div style="font-size:11px;color:{TEXT_SECONDARY};">{label}</div>'
-            f'<div style="font-weight:700;font-size:13px;color:{color};">{txt}</div></div>'
+            f'<div style="flex:1;white-space:nowrap;"><div style="font-size:11px;color:{TEXT_SECONDARY};'
+            f'white-space:nowrap;">{label}</div>'
+            f'<div style="font-weight:700;font-size:13px;color:{color};white-space:nowrap;">{txt}</div></div>'
         )
     return f'<div style="display:flex;gap:14px;margin-top:10px;">{"".join(partes)}</div>'
 
@@ -418,25 +419,22 @@ with tab_vermouth:
 
     año_cards = pd.Timestamp.now().year
     resumen_cat = M.resumen_anual_categoria_vermouth(ventas_verm, año_cards)
+    prev, act = resumen_cat["prev"], resumen_cat["act"]
+
     cc1, cc2, cc3, cc4 = st.columns(4)
-    with cc1.container(border=True):
-        st.metric(f"Facturación {año_cards - 1}", fmt_money(resumen_cat["total_año_prev"]))
-    with cc2.container(border=True):
-        st.metric(f"Unidades {año_cards - 1}", fmt_int(resumen_cat["unid_año_prev"]))
-    with cc3.container(border=True):
-        st.metric(f"Facturación YTD {año_cards}", fmt_money(resumen_cat["total_ytd_act"]))
-        st.markdown(fila_variaciones([
-            ("Mensual", resumen_cat["var_mensual_total"]),
-            ("Interanual", resumen_cat["var_interanual_total"]),
-            ("Acumulado", resumen_cat["var_ytd_total"]),
-        ]), unsafe_allow_html=True)
-    with cc4.container(border=True):
-        st.metric(f"Unidades YTD {año_cards}", fmt_int(resumen_cat["unid_ytd_act"]))
-        st.markdown(fila_variaciones([
-            ("Mensual", resumen_cat["var_mensual_unid"]),
-            ("Interanual", resumen_cat["var_interanual_unid"]),
-            ("Acumulado", resumen_cat["var_ytd_unid"]),
-        ]), unsafe_allow_html=True)
+    for col, titulo, valor, snap, campo in (
+        (cc1, f"Facturación {año_cards - 1}", fmt_money(prev["total"]), prev, "total"),
+        (cc2, f"Unidades {año_cards - 1}", fmt_int(prev["unidades"]), prev, "unid"),
+        (cc3, f"Facturación YTD {año_cards}", fmt_money(act["total"]), act, "total"),
+        (cc4, f"Unidades YTD {año_cards}", fmt_int(act["unidades"]), act, "unid"),
+    ):
+        with col.container(border=True):
+            st.metric(titulo, valor)
+            st.markdown(fila_variaciones([
+                ("Mensual", snap[f"var_mensual_{campo}"]),
+                ("Interanual", snap[f"var_interanual_{campo}"]),
+                ("Acumulado", snap[f"var_acumulado_{campo}"]),
+            ]), unsafe_allow_html=True)
     st.caption("Categoría Vermouth completa (todas las variantes) — Martini Rosso, Cinzano y el resto de las marcas juntas.")
 
     fecha_min_v, fecha_max_v = ventas_verm["Fecha"].min().date(), ventas_verm["Fecha"].max().date()

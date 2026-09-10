@@ -431,33 +431,23 @@ def resumen_rosso_ytd_por_marca(ventas_verm, año, fecha_corte=None):
     tabla = pd.concat([tabla, pd.DataFrame([total_fila])], ignore_index=True)
     return tabla, total_prev, total_actual
 
-def resumen_anual_categoria_vermouth(ventas_verm, año, fecha_corte=None):
-    """Facturación y unidades del año anterior (año completo cerrado) y del
-    año en curso (YTD al mismo día), para TODA la categoría Vermouth (todas
-    las marcas y variantes juntas: Martini Rosso, Bianco y Extra Dry,
-    Cinzano en todas sus variantes, Carpano, Lunfa, Unión Federal, etc. —
-    la categoría completa que se compara contra la competencia, no solo
-    Cepas ni solo la variante Rosso) — más variación mensual (último mes
+def _snapshot_periodo(d, año, fecha_corte):
+    """Total/unidades de 'd' desde el 1/1 de 'año' hasta fecha_corte (año
+    completo si fecha_corte es el 31/12), + variación mensual (último mes
     cerrado vs. el anterior), interanual (ese mismo mes vs. un año atrás) y
-    YTD (año en curso vs año anterior, mismo día). Pensada para las
-    tarjetas resumen de la pestaña Vermouth."""
-    fecha_corte = fecha_corte or pd.Timestamp.now().normalize()
-    d = ventas_verm
-
-    ini_prev, fin_prev = pd.Timestamp(año - 1, 1, 1), pd.Timestamp(año - 1, 12, 31)
-    d_prev = d[(d["Fecha"] >= ini_prev) & (d["Fecha"] <= fin_prev)]
-    total_año_prev, unid_año_prev = d_prev["Total"].sum(), d_prev["Cantidad"].sum()
-
+    acumulado (mismo período vs. el año anterior) — un solo cálculo
+    reutilizable para armar tarjetas simétricas (mismo período "cerrado a
+    hoy" para el año en curso, "cerrado a 31/12" para el año anterior)."""
     doy = fecha_corte.dayofyear
 
-    def _ytd(año_x):
+    def _acum(año_x):
         ini = pd.Timestamp(año_x, 1, 1)
         fin = ini + pd.Timedelta(days=doy - 1)
         dd = d[(d["Fecha"] >= ini) & (d["Fecha"] <= fin)]
         return dd["Total"].sum(), dd["Cantidad"].sum()
 
-    total_ytd_act, unid_ytd_act = _ytd(año)
-    total_ytd_prev, unid_ytd_prev = _ytd(año - 1)
+    total_act, unid_act = _acum(año)
+    total_prev, unid_prev = _acum(año - 1)
 
     dm = d.copy()
     dm["Periodo"] = dm["Fecha"].dt.to_period("M")
@@ -468,9 +458,10 @@ def resumen_anual_categoria_vermouth(ventas_verm, año, fecha_corte=None):
             return mensual.loc[periodo, "Total"], mensual.loc[periodo, "Unidades"]
         return 0.0, 0.0
 
-    periodo_actual = fecha_corte.to_period("M")
-    ult_cerrado = periodo_actual - 1
-    penult_cerrado = periodo_actual - 2
+    periodo_corte = fecha_corte.to_period("M")
+    es_fin_de_año = fecha_corte.month == 12 and fecha_corte.day == 31
+    ult_cerrado = periodo_corte if es_fin_de_año else periodo_corte - 1
+    penult_cerrado = ult_cerrado - 1
     mismo_mes_año_ant = ult_cerrado - 12
 
     total_ult, unid_ult = _mes(ult_cerrado)
@@ -478,14 +469,31 @@ def resumen_anual_categoria_vermouth(ventas_verm, año, fecha_corte=None):
     total_ia, unid_ia = _mes(mismo_mes_año_ant)
 
     return {
-        "total_año_prev": total_año_prev, "unid_año_prev": unid_año_prev,
-        "total_ytd_act": total_ytd_act, "unid_ytd_act": unid_ytd_act,
+        "total": total_act, "unidades": unid_act,
         "var_mensual_total": var(total_penult, total_ult),
         "var_mensual_unid": var(unid_penult, unid_ult),
         "var_interanual_total": var(total_ia, total_ult),
         "var_interanual_unid": var(unid_ia, unid_ult),
-        "var_ytd_total": var(total_ytd_prev, total_ytd_act),
-        "var_ytd_unid": var(unid_ytd_prev, unid_ytd_act),
+        "var_acumulado_total": var(total_prev, total_act),
+        "var_acumulado_unid": var(unid_prev, unid_act),
+    }
+
+
+def resumen_anual_categoria_vermouth(ventas_verm, año, fecha_corte=None):
+    """Dos 'snapshots' simétricos de TODA la categoría Vermouth (todas las
+    marcas y variantes juntas: Martini Rosso, Bianco y Extra Dry, Cinzano
+    en todas sus variantes, Carpano, Lunfa, Unión Federal, etc. — la
+    categoría completa que se compara contra la competencia, no solo Cepas
+    ni solo la variante Rosso): 'prev' es el año anterior completo (cerrado
+    al 31/12), 'act' es el año en curso (cerrado a fecha_corte, o sea YTD).
+    Cada uno trae total/unidades + variación mensual/interanual/acumulado
+    propia — pensado para 4 tarjetas con la misma estructura en la pestaña
+    Vermouth."""
+    fecha_corte = fecha_corte or pd.Timestamp.now().normalize()
+    d = ventas_verm
+    return {
+        "prev": _snapshot_periodo(d, año - 1, pd.Timestamp(año - 1, 12, 31)),
+        "act": _snapshot_periodo(d, año, fecha_corte),
     }
 
 
