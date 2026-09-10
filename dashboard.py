@@ -423,9 +423,9 @@ with tab_vermouth:
 
     cc1, cc2, cc3, cc4 = st.columns(4)
     with cc1.container(border=True):
-        st.metric(f"Facturación {año_cards - 1}", fmt_money(prev["total"]))
+        st.metric(f"Facturación YTD {año_cards - 1}", fmt_money(prev["total"]))
     with cc2.container(border=True):
-        st.metric(f"Unidades {año_cards - 1}", fmt_int(prev["unidades"]))
+        st.metric(f"Unidades YTD {año_cards - 1}", fmt_int(prev["unidades"]))
     for col, titulo, valor, campo in (
         (cc3, f"Facturación YTD {año_cards}", fmt_money(act["total"]), "total"),
         (cc4, f"Unidades YTD {año_cards}", fmt_int(act["unidades"]), "unid"),

@@ -480,19 +480,22 @@ def _snapshot_periodo(d, año, fecha_corte):
 
 
 def resumen_anual_categoria_vermouth(ventas_verm, año, fecha_corte=None):
-    """Dos 'snapshots' simétricos de TODA la categoría Vermouth (todas las
-    marcas y variantes juntas: Martini Rosso, Bianco y Extra Dry, Cinzano
-    en todas sus variantes, Carpano, Lunfa, Unión Federal, etc. — la
-    categoría completa que se compara contra la competencia, no solo Cepas
-    ni solo la variante Rosso): 'prev' es el año anterior completo (cerrado
-    al 31/12), 'act' es el año en curso (cerrado a fecha_corte, o sea YTD).
-    Cada uno trae total/unidades + variación mensual/interanual/acumulado
-    propia — pensado para 4 tarjetas con la misma estructura en la pestaña
-    Vermouth."""
+    """Dos 'snapshots' YTD simétricos de TODA la categoría Vermouth (todas
+    las marcas y variantes juntas: Martini Rosso, Bianco y Extra Dry,
+    Cinzano en todas sus variantes, Carpano, Lunfa, Unión Federal, etc. —
+    la categoría completa que se compara contra la competencia, no solo
+    Cepas ni solo la variante Rosso): 'prev' es el año anterior CORTADO AL
+    MISMO DÍA del año (no el año completo — para que 'prev' vs. 'act' sea
+    una comparación YTD pareja, mismo período en los dos años), 'act' es el
+    año en curso cortado a fecha_corte. Cada uno trae total/unidades +
+    variación mensual/interanual/acumulado propia — pensado para 4
+    tarjetas con la misma estructura en la pestaña Vermouth."""
     fecha_corte = fecha_corte or pd.Timestamp.now().normalize()
     d = ventas_verm
+    doy = fecha_corte.dayofyear
+    fecha_corte_prev = pd.Timestamp(año - 1, 1, 1) + pd.Timedelta(days=doy - 1)
     return {
-        "prev": _snapshot_periodo(d, año - 1, pd.Timestamp(año - 1, 12, 31)),
+        "prev": _snapshot_periodo(d, año - 1, fecha_corte_prev),
         "act": _snapshot_periodo(d, año, fecha_corte),
     }
 
