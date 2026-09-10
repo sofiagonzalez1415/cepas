@@ -422,18 +422,20 @@ with tab_vermouth:
     prev, act = resumen_cat["prev"], resumen_cat["act"]
 
     cc1, cc2, cc3, cc4 = st.columns(4)
-    for col, titulo, valor, snap, campo in (
-        (cc1, f"Facturación {año_cards - 1}", fmt_money(prev["total"]), prev, "total"),
-        (cc2, f"Unidades {año_cards - 1}", fmt_int(prev["unidades"]), prev, "unid"),
-        (cc3, f"Facturación YTD {año_cards}", fmt_money(act["total"]), act, "total"),
-        (cc4, f"Unidades YTD {año_cards}", fmt_int(act["unidades"]), act, "unid"),
+    with cc1.container(border=True):
+        st.metric(f"Facturación {año_cards - 1}", fmt_money(prev["total"]))
+    with cc2.container(border=True):
+        st.metric(f"Unidades {año_cards - 1}", fmt_int(prev["unidades"]))
+    for col, titulo, valor, campo in (
+        (cc3, f"Facturación YTD {año_cards}", fmt_money(act["total"]), "total"),
+        (cc4, f"Unidades YTD {año_cards}", fmt_int(act["unidades"]), "unid"),
     ):
         with col.container(border=True):
             st.metric(titulo, valor)
             st.markdown(fila_variaciones([
-                ("Mensual", snap[f"var_mensual_{campo}"]),
-                ("Interanual", snap[f"var_interanual_{campo}"]),
-                ("Acumulado", snap[f"var_acumulado_{campo}"]),
+                ("Mensual", act[f"var_mensual_{campo}"]),
+                ("Interanual", act[f"var_interanual_{campo}"]),
+                ("Acumulado", act[f"var_acumulado_{campo}"]),
             ]), unsafe_allow_html=True)
     st.caption("Categoría Vermouth completa (todas las variantes) — Martini Rosso, Cinzano y el resto de las marcas juntas.")
 
