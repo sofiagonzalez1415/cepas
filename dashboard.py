@@ -71,6 +71,29 @@ def fmt_pct(n):
         return "—"
 
 
+def fila_variaciones(vals):
+    """HTML de una fila compacta con 2-3 variaciones (label, var_pct) lado a
+    lado — pensada para ir debajo de un st.metric grande, sin el achique de
+    texto que sufre st.metric cuando se lo mete en columnas angostas. Se
+    arma en una sola línea (sin indentación por renglón) para que Markdown
+    no la confunda con un bloque de código, como pasó con la versión
+    anterior de las tarjetas de Vermouth."""
+    partes = []
+    for label, v in vals:
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            txt, color = "—", TEXT_SECONDARY
+        else:
+            positivo = v >= 0
+            color = GOOD if positivo else BAD
+            flecha = "▲" if positivo else "▼"
+            txt = f"{flecha} {fmt_pct(v)}"
+        partes.append(
+            f'<div style="flex:1;min-width:0;"><div style="font-size:11px;color:{TEXT_SECONDARY};">{label}</div>'
+            f'<div style="font-weight:700;font-size:13px;color:{color};">{txt}</div></div>'
+        )
+    return f'<div style="display:flex;gap:14px;margin-top:10px;">{"".join(partes)}</div>'
+
+
 def fmt_share(n):
     """Como fmt_pct pero sin el signo '+' — para columnas de participación
     (% del total), no de variación."""
@@ -402,16 +425,18 @@ with tab_vermouth:
         st.metric(f"Unidades {año_cards - 1}", fmt_int(resumen_cat["unid_año_prev"]))
     with cc3.container(border=True):
         st.metric(f"Facturación YTD {año_cards}", fmt_money(resumen_cat["total_ytd_act"]))
-        vm1, vm2, vm3 = st.columns(3)
-        vm1.metric("Mensual", "", fmt_pct(resumen_cat["var_mensual_total"]))
-        vm2.metric("Interanual", "", fmt_pct(resumen_cat["var_interanual_total"]))
-        vm3.metric("Acumulado", "", fmt_pct(resumen_cat["var_ytd_total"]))
+        st.markdown(fila_variaciones([
+            ("Mensual", resumen_cat["var_mensual_total"]),
+            ("Interanual", resumen_cat["var_interanual_total"]),
+            ("Acumulado", resumen_cat["var_ytd_total"]),
+        ]), unsafe_allow_html=True)
     with cc4.container(border=True):
         st.metric(f"Unidades YTD {año_cards}", fmt_int(resumen_cat["unid_ytd_act"]))
-        vu1, vu2, vu3 = st.columns(3)
-        vu1.metric("Mensual", "", fmt_pct(resumen_cat["var_mensual_unid"]))
-        vu2.metric("Interanual", "", fmt_pct(resumen_cat["var_interanual_unid"]))
-        vu3.metric("Acumulado", "", fmt_pct(resumen_cat["var_ytd_unid"]))
+        st.markdown(fila_variaciones([
+            ("Mensual", resumen_cat["var_mensual_unid"]),
+            ("Interanual", resumen_cat["var_interanual_unid"]),
+            ("Acumulado", resumen_cat["var_ytd_unid"]),
+        ]), unsafe_allow_html=True)
     st.caption("Categoría Vermouth completa (todas las variantes) — Martini Rosso, Cinzano y el resto de las marcas juntas.")
 
     fecha_min_v, fecha_max_v = ventas_verm["Fecha"].min().date(), ventas_verm["Fecha"].max().date()
