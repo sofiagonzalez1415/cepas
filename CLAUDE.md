@@ -13,16 +13,11 @@ Drive + Streamlit Cloud, mismo Service Account) — ver
 `../Panel_Campari/CLAUDE.md` para el detalle general del patrón si hace
 falta.
 
-> **⚠️ Pendiente de setup (2026-09-09)**: creado por Claude en esta sesión,
-> con `extract_data.py` validado a mano contra la API (corrida de prueba,
-> sin subir a Drive), pero **todavía no está desplegado**. Faltan 3 pasos
-> manuales que solo puede hacer Sofia (ver "Setup — primera vez" abajo):
-> 1. Crear la carpeta "Cepas" en Drive y compartirla con la Service Account.
-> 2. Repo de GitHub + Streamlit Community Cloud.
-> 3. Tarea programada de Windows para la extracción diaria.
-> Hasta que no esté el paso 1, `DRIVE_FOLDER_ID` en `extract_data.py` y
-> `dashboard.py` queda en `"PENDIENTE_CREAR_CARPETA_DRIVE"` (placeholder, no
-> anda así).
+> **✅ Setup completo (2026-09-11)**: los 3 pasos manuales de "Setup —
+> primera vez" ya están hechos — carpeta "Cepas" en Drive compartida,
+> repo (`github.com/sofiagonzalez1415/cepas`) + Streamlit Community Cloud
+> desplegado, y tarea programada de Windows ("Olliari - Panel Cepas",
+> diaria 09:15) corriendo y probada a mano con éxito.
 
 ## Hallazgo importante sobre "los demás vermouth" (2026-09-09)
 
@@ -226,9 +221,9 @@ auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
 client_x509_cert_url = "..."
 ```
 
-### 4. Tarea programada de Windows
+### 4. Tarea programada de Windows ✅ (hecho 2026-09-11)
 
-Copiar `run_extract.bat` a una ruta **sin espacios** (mismo bug ya
+`run_extract.bat` copiado a una ruta **sin espacios** (mismo bug ya
 documentado en Panel_Campari — `schtasks /tr` con espacios en la ruta tira
 `ERROR_FILE_NOT_FOUND` aunque la tarea se cree sin error):
 
@@ -236,21 +231,18 @@ documentado en Panel_Campari — `schtasks /tr` con espacios en la ruta tira
 C:\Users\Sofia\run_extract_cepas.bat
 ```
 
-Para crear la tarea (correr una sola vez, **después** de terminar los
-pasos 1 y 2):
+Tarea creada:
 
 ```powershell
-schtasks /create /tn "Olliari - Panel Cepas" /tr "C:\Users\Sofia\run_extract_cepas.bat" /sc daily /st 08:15 /f
+schtasks /create /tn "Olliari - Panel Cepas" /tr "C:\Users\Sofia\run_extract_cepas.bat" /sc daily /st 09:15 /f
 ```
 
-(08:15, no 08:00, para no pisarse con la tarea de Panel Campari que ya
-corre a esa hora.)
+(09:15, no 09:00, para no pisarse con "Olliari - Panel Campari", que corre
+a las 09:00 — la hora real de esa tarea, confirmada con `schtasks /query`;
+no 08:00 como decía una versión vieja de esta nota.)
 
-Para probarla a mano:
-
-```powershell
-schtasks /run /tn "Olliari - Panel Cepas"
-```
+Probada a mano con éxito (`schtasks /run /tn "Olliari - Panel Cepas"` →
+corrida completa, Excel subido a Drive sin errores, ver `extract_log.txt`).
 
 ## Uso diario
 
