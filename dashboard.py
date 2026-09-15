@@ -218,6 +218,10 @@ def cargar_datos():
     ventas["Fecha"] = pd.to_datetime(ventas["Fecha"])
     compras["Fecha"] = pd.to_datetime(compras["Fecha"])
     ventas_verm["Fecha"] = pd.to_datetime(ventas_verm["Fecha"])
+    for df in (ventas, ventas_verm):
+        if "Sucursal" not in df.columns:
+            df["Sucursal"] = ""  # panel_cepas.xlsx viejo, sin columna Sucursal todavía
+        df["Sucursal"] = df["Sucursal"].fillna("")
     return ventas, compras, ventas_verm, meta
 
 
@@ -396,8 +400,8 @@ with tab_clientes:
     )
     if info_q["cantidad"] > 0:
         tabla_det = pd.DataFrame({
-            "Cliente": info_q["clientes"],
-            "Razón Social": [M.razon_social(c) for c in info_q["clientes"]],
+            "Razón Social": [M.razon_social(c[0]) for c in info_q["clientes"]],
+            "Sucursal": [c[1] for c in info_q["clientes"]],
         })
         st.dataframe(tabla_det, use_container_width=True, hide_index=True)
     else:
@@ -407,7 +411,7 @@ with tab_clientes:
     top_n = st.slider("Top N clientes", 10, 100, 25, step=5)
     ranking = M.ranking_clientes(ventas_f, top_n=top_n)
     tabla = ranking.rename(columns={"NombreFantasia": "Nombre", "Participacion": "% Unidades"})
-    tabla = tabla[["Cliente", "Nombre", "Total", "Unidades", "Comprobantes", "% Unidades"]]
+    tabla = tabla[["Cliente", "Sucursal", "Nombre", "Total", "Unidades", "Comprobantes", "% Unidades"]]
     tabla_estilo = estilizar_tabla(tabla, money_cols=["Total"], int_cols=["Unidades", "Comprobantes"],
                                     share_cols=["% Unidades"])
     st.dataframe(tabla_estilo, use_container_width=True, hide_index=True)
@@ -523,15 +527,15 @@ with tab_vermouth:
         cc1, cc2, cc3 = st.columns(3)
         with cc1:
             st.markdown(f"**Solo Martini Rosso ({len(overlap['solo_a'])})**")
-            st.dataframe(pd.DataFrame({"Razón Social": [M.razon_social(c) for c in overlap["solo_a"]]}),
+            st.dataframe(pd.DataFrame({"Cliente": [M.etiqueta_cliente(c) for c in overlap["solo_a"]]}),
                          use_container_width=True, hide_index=True)
         with cc2:
             st.markdown(f"**Compran las dos ({len(overlap['ambas'])})**")
-            st.dataframe(pd.DataFrame({"Razón Social": [M.razon_social(c) for c in overlap["ambas"]]}),
+            st.dataframe(pd.DataFrame({"Cliente": [M.etiqueta_cliente(c) for c in overlap["ambas"]]}),
                          use_container_width=True, hide_index=True)
         with cc3:
             st.markdown(f"**Solo Cinzano Rosso ({len(overlap['solo_b'])})**")
-            st.dataframe(pd.DataFrame({"Razón Social": [M.razon_social(c) for c in overlap["solo_b"]]}),
+            st.dataframe(pd.DataFrame({"Cliente": [M.etiqueta_cliente(c) for c in overlap["solo_b"]]}),
                          use_container_width=True, hide_index=True)
 
     st.markdown("---")

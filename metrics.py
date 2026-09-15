@@ -123,10 +123,23 @@ def evolucion_mensual_por_marca(ventas, n_meses=13, col_marca="Marca"):
 
 # ── Mix por marca ────────────────────────────────────────────────────────
 
+def _contar_clientes(d, cols):
+    """Cantidad de clientes DISTINTOS agrupando por 'cols', contando
+    (Cliente, Sucursal) — no solo Cliente — para que una cadena con varios
+    locales bajo el mismo código (ej. Distrijoyita: Galpón de Vinos, La
+    Copetería, Don Santiago II) no se cuente como un solo cliente. Devuelve
+    un DataFrame con 'cols' + 'Clientes', pensado para mergear."""
+    cols = [cols] if isinstance(cols, str) else list(cols)
+    suc = d["Sucursal"].fillna("") if "Sucursal" in d.columns else ""
+    out = (d.assign(_Suc=suc).groupby(cols)[["Cliente", "_Suc"]]
+            .apply(lambda g: g.drop_duplicates().shape[0]))
+    return out.rename("Clientes").reset_index()
+
+
 def mix_por_marca(ventas, fecha_desde=None, fecha_hasta=None, col_marca="Marca", orden=None):
     d = filtrar(ventas, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta, col_marca=col_marca)
-    g = d.groupby(col_marca).agg(Total=("Total", "sum"), Unidades=("Cantidad", "sum"),
-                                  Clientes=("Cliente", "nunique")).reset_index()
+    g = d.groupby(col_marca).agg(Total=("Total", "sum"), Unidades=("Cantidad", "sum")).reset_index()
+    g = g.merge(_contar_clientes(d, col_marca), on=col_marca, how="left")
     total_gral = g["Unidades"].sum()
     g["Participacion"] = g["Unidades"] / total_gral if total_gral else 0
     orden = orden or ORDEN_MARCAS
@@ -139,7 +152,8 @@ def mix_por_marca(ventas, fecha_desde=None, fecha_hasta=None, col_marca="Marca",
 
 def ranking_clientes(ventas, fecha_desde=None, fecha_hasta=None, top_n=25):
     d = filtrar(ventas, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta)
-    g = d.groupby("Cliente").agg(
+    d = d.assign(Sucursal=d["Sucursal"].fillna("") if "Sucursal" in d.columns else "")
+    g = d.groupby(["Cliente", "Sucursal"]).agg(
         NombreFantasia=("NombreFantasia", "first"),
         Total=("Total", "sum"), Unidades=("Cantidad", "sum"),
         Comprobantes=("NroComprobante", "nunique"),
@@ -153,6 +167,15 @@ def razon_social(cliente_raw):
     """'(01827) - FORTY FOUR AVENUE S.A. - CORTEZ' -> 'FORTY FOUR AVENUE S.A.'"""
     partes = [p.strip() for p in str(cliente_raw or "").split(" - ")]
     return partes[1] if len(partes) > 1 else partes[0]
+
+
+def etiqueta_cliente(cliente_sucursal):
+    """(Cliente, Sucursal) -> 'RAZON SOCIAL' o 'RAZON SOCIAL — Sucursal' si
+    el cliente tiene más de un local registrado en BSGestión (ej.
+    Distrijoyita: 'DISTRI JOYITA S.R.L. — Galpón de Vinos')."""
+    cliente, sucursal = cliente_sucursal
+    base = razon_social(cliente)
+    return f"{base} — {sucursal}" if sucursal else base
 
 
 def vendedor_nombre(vendedor_raw):
@@ -176,10 +199,9 @@ def resultados_mensuales_por_producto(ventas, col_marca="Marca"):
     para graficar. Devuelve una fila por (Producto, Periodo)."""
     d = ventas.copy()
     d["Periodo"] = d["Fecha"].dt.to_period("M")
-    g = d.groupby([col_marca, "Producto", "Periodo"]).agg(
-        Unidades=("Cantidad", "sum"), Total=("Total", "sum"),
-        Clientes=("Cliente", "nunique"),
-    ).reset_index()
+    cols_grupo = [col_marca, "Producto", "Periodo"]
+    g = d.groupby(cols_grupo).agg(Unidades=("Cantidad", "sum"), Total=("Total", "sum")).reset_index()
+    g = g.merge(_contar_clientes(d, cols_grupo), on=cols_grupo, how="left")
     g["Etiqueta"] = g["Periodo"].astype(str)
     return g.sort_values([col_marca, "Producto", "Periodo"])
 
@@ -202,8 +224,9 @@ def ranking_productos(ventas, fecha_desde=None, fecha_hasta=None, marcas=None):
     g = d.groupby(["Marca", "Producto"]).agg(
         Total=("Total", "sum"), Unidades=("Cantidad", "sum"),
         PrecioProm=("PrecioUnitario", "mean"),
-        Compradores=("Cliente", "nunique"),
     ).reset_index()
+    g = g.merge(_contar_clientes(d, ["Marca", "Producto"]).rename(columns={"Clientes": "Compradores"}),
+                on=["Marca", "Producto"], how="left")
     return g.sort_values("Total", ascending=False).reset_index(drop=True)
 
 
@@ -250,8 +273,9 @@ def ranking_productos_ytd(ventas, año, fecha_corte=None, marcas=None, productos
         ini = pd.Timestamp(year=año_x, month=1, day=1)
         fin = ini + pd.Timedelta(days=doy - 1)
         dd = d[(d["Fecha"] >= ini) & (d["Fecha"] <= fin)]
-        return dd.groupby("Producto").agg(Total=("Total", "sum"), Unidades=("Cantidad", "sum"),
-                                            Compradores=("Cliente", "nunique"))
+        gg = dd.groupby("Producto").agg(Total=("Total", "sum"), Unidades=("Cantidad", "sum"))
+        return gg.join(_contar_clientes(dd, "Producto").rename(columns={"Clientes": "Compradores"})
+                        .set_index("Producto"))
 
     actual = _slice(año).rename(columns={"Total": "TotalActual", "Unidades": "UnidadesActual",
                                           "Compradores": "CompradoresActual"})
@@ -345,7 +369,11 @@ def clientes_por_marca_trimestre(ventas, marcas=None, año=None, fecha_corte=Non
         for q in (1, 2, 3):
             ini, fin = _rango_trimestre_cortado(año, q, fecha_corte)
             mask = (d["Fecha"] >= ini) & (d["Fecha"] <= fin)
-            clientes = sorted(d.loc[mask, "Cliente"].unique())
+            suc = d.loc[mask, "Sucursal"].fillna("") if "Sucursal" in d.columns else ""
+            clientes = sorted(set(
+                d.loc[mask, ["Cliente"]].assign(Sucursal=suc)[["Cliente", "Sucursal"]]
+                 .itertuples(index=False, name=None)
+            ))
             out[marca][f"Q{q}"] = {
                 "clientes": clientes, "cantidad": len(clientes),
                 "ini": ini.date(), "fin": fin.date(),
@@ -506,8 +534,8 @@ def ranking_marcas_vermouth(ventas_verm, fecha_desde=None, fecha_hasta=None):
     d = filtrar(ventas_verm, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta, col_marca="MarcaVermouth")
     g = d.groupby("MarcaVermouth").agg(
         Total=("Total", "sum"), Unidades=("Cantidad", "sum"),
-        Clientes=("Cliente", "nunique"),
     ).reset_index()
+    g = g.merge(_contar_clientes(d, "MarcaVermouth"), on="MarcaVermouth", how="left")
     total_gral = g["Unidades"].sum()
     g["ParticipacionUnidades"] = g["Unidades"] / total_gral if total_gral else 0
     orden_map = {m: i for i, m in enumerate(ORDEN_MARCAS_VERMOUTH)}
@@ -520,8 +548,14 @@ def clientes_overlap(ventas_verm, marca_a, marca_b, fecha_desde=None, fecha_hast
     'Martini Rosso vs Cinzano': cuántos clientes son exclusivos de cada uno
     y cuántos compran las dos."""
     d = filtrar(ventas_verm, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta, col_marca="MarcaVermouth")
-    clientes_a = set(d[d["MarcaVermouth"] == marca_a]["Cliente"].unique())
-    clientes_b = set(d[d["MarcaVermouth"] == marca_b]["Cliente"].unique())
+    d = d.assign(Sucursal=d["Sucursal"].fillna("") if "Sucursal" in d.columns else "")
+
+    def _set_clientes(marca):
+        sub = d[d["MarcaVermouth"] == marca][["Cliente", "Sucursal"]].drop_duplicates()
+        return set(sub.itertuples(index=False, name=None))
+
+    clientes_a = _set_clientes(marca_a)
+    clientes_b = _set_clientes(marca_b)
     return {
         "solo_a": sorted(clientes_a - clientes_b),
         "solo_b": sorted(clientes_b - clientes_a),

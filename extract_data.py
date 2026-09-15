@@ -163,6 +163,20 @@ def nombre_fantasia(cliente_raw):
     return " - ".join(partes[2:]) if len(partes) > 2 else ""
 
 
+def _parse_nro_comprobante(raw):
+    """'0001-00002300 - LA COPETERIA' -> (1, 2300). El SP le agrega un
+    sufijo de texto libre (a veces el nombre del local, a veces una nota de
+    entrega, con typos y abreviaturas — ver hallazgo Distrijoyita 2026-09-15)
+    que no sirve para identificar la sucursal de forma confiable. Se
+    descarta acá; el número de comprobante + punto de venta se usa para
+    cruzar contra fw_din_branch en fetch_sucursales(), que sí trae el
+    nombre oficial del local."""
+    m = re.match(r"^\s*(\d+)\s*-\s*(\d+)", str(raw or ""))
+    if not m:
+        return None, None
+    return int(m.group(1)), int(m.group(2))
+
+
 def normalizar_producto(articulo):
     """'BV1899 | CAMPARI 1000cc' -> 'CAMPARI 1000cc'; 'BV1899 - CAMPARI 1000cc'
     -> 'CAMPARI 1000cc'."""
@@ -238,6 +252,83 @@ def _armar_df_ventas(df):
     return df
 
 
+def fetch_sucursales(fecha_desde_str, chunk_dias=180):
+    """Nombre real de la sucursal del cliente (ej. 'Galpón de Vinos', 'La
+    Copetería') para clientes-cadena que tienen más de un local registrado
+    en BSGestión bajo el mismo código — confirmado a mano con Distrijoyita
+    SRL (Sofia, 2026-09-15): 3 locales activos, mismo código de cliente
+    (01169), antes contados como un solo cliente en el panel.
+
+    Sale directo de la tabla real de comprobantes, NO del sufijo de texto
+    libre que trae el campo 'NroComprobante' del SP de ventas (ver
+    _parse_nro_comprobante) — ese sufijo tiene typos/abreviaturas
+    ('GDV', 'GALPON LLEVA JESSI') y no es confiable para contar clientes.
+    La tabla fw_din_branch es el maestro real de "Sucursales" que se ve en
+    la ficha del cliente en BSGestión, y se cruza 1 a 1 con
+    ac_co_din_comprobantes.IDSUCURSAL. La gran mayoría de los clientes
+    (un solo local) no tiene fila acá — el merge en _agregar_sucursal() es
+    left join y les deja 'Sucursal' vacío, sin afectarlos."""
+    fecha_desde = pd.Timestamp(fecha_desde_str)
+    fecha_hasta = pd.Timestamp.now().normalize()
+    partes = []
+    cursor = fecha_desde
+    while cursor <= fecha_hasta:
+        cursor_fin = min(cursor + pd.Timedelta(days=chunk_dias), fecha_hasta)
+        print(f"  Sucursales {cursor.date()} -> {cursor_fin.date()}...")
+        query = f"""
+            SELECT
+                c.fecha             AS Fecha,
+                c.numeroPuntoVenta  AS PuntoVenta,
+                c.nroComprobante    AS NroComprobanteNum,
+                b.description       AS Sucursal
+            FROM ac_co_din_comprobantes c
+            INNER JOIN fw_din_branch b ON b.ID = c.IDSUCURSAL
+            WHERE c.fecha >= '{cursor.strftime('%Y-%m-%d')}'
+            AND c.fecha <= '{cursor_fin.strftime('%Y-%m-%d')}'
+            AND c.anulado = 0
+        """
+        filas = api_call(query, timeout=180)
+        if filas:
+            partes.append(pd.DataFrame(filas))
+        cursor = cursor_fin + pd.Timedelta(days=1)
+
+    cols = ["Fecha", "PuntoVenta", "NroComprobanteNum", "Sucursal"]
+    if not partes:
+        return pd.DataFrame(columns=cols)
+
+    df = pd.concat(partes, ignore_index=True)
+    df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce").dt.normalize()
+    df["PuntoVenta"] = pd.to_numeric(df["PuntoVenta"], errors="coerce").astype("Int64")
+    df["NroComprobanteNum"] = pd.to_numeric(df["NroComprobanteNum"], errors="coerce").astype("Int64")
+    df = df.drop_duplicates(subset=["Fecha", "PuntoVenta", "NroComprobanteNum"])
+    return df[cols]
+
+
+def _agregar_sucursal(df, sucursales):
+    """Suma la columna 'Sucursal' a un dataset de ventas ya armado,
+    cruzando por (fecha, punto de venta, número de comprobante) contra
+    fetch_sucursales(). Deja 'Sucursal' vacío ("") para clientes de un solo
+    local, que son la gran mayoría."""
+    if df.empty:
+        df = df.copy()
+        df["Sucursal"] = ""
+        return df
+    df = df.copy()
+    parsed = df["NroComprobante"].apply(_parse_nro_comprobante)
+    df["PuntoVenta"] = pd.array([p[0] for p in parsed], dtype="Int64")
+    df["NroComprobanteNum"] = pd.array([p[1] for p in parsed], dtype="Int64")
+    df["_FechaDia"] = df["Fecha"].dt.normalize()
+    if not sucursales.empty:
+        df = df.merge(
+            sucursales.rename(columns={"Fecha": "_FechaDia"}),
+            on=["_FechaDia", "PuntoVenta", "NroComprobanteNum"], how="left",
+        )
+    else:
+        df["Sucursal"] = pd.NA
+    df["Sucursal"] = df["Sucursal"].fillna("")
+    return df.drop(columns=["PuntoVenta", "NroComprobanteNum", "_FechaDia"])
+
+
 def fetch_ventas(fecha_desde_str, chunk_dias=90):
     """Trae ventas en tramos de 90 días y arma DOS datasets a partir del
     mismo pull (para no pedirle dos veces lo mismo a la API):
@@ -268,36 +359,45 @@ def fetch_ventas(fecha_desde_str, chunk_dias=90):
                 partes_verm.append(df_verm)
         cursor = cursor_fin + pd.Timedelta(days=1)
 
-    cols_cepas = ["Fecha", "Empresa", "Cliente", "NombreFantasia", "Vendedor", "Producto", "Marca",
-                  "Categoria", "NroComprobante", "Tipo", "Cantidad", "PrecioUnitario",
-                  "Total", "TotalNeto"]
+    # "Sucursal" no viene del SP — se suma más abajo con _agregar_sucursal(),
+    # por eso queda afuera de las columnas base y se agrega recién al final.
+    cols_cepas_base = ["Fecha", "Empresa", "Cliente", "NombreFantasia", "Vendedor", "Producto",
+                        "Marca", "Categoria", "NroComprobante", "Tipo", "Cantidad", "PrecioUnitario",
+                        "Total", "TotalNeto"]
     if partes_cepas:
         ventas_cepas = pd.concat(partes_cepas, ignore_index=True)
         ventas_cepas = _armar_df_ventas(ventas_cepas)
         ventas_cepas["Tipo"] = ventas_cepas["Tipo comprobante"].map({"FAC": "FC", "NC": "NC"}).fillna(ventas_cepas["Tipo comprobante"])
         ventas_cepas["Marca"] = ventas_cepas["Producto"].apply(clasificar_marca)
-        for c in cols_cepas:
+        for c in cols_cepas_base:
             if c not in ventas_cepas.columns:
                 ventas_cepas[c] = pd.NA
-        ventas_cepas = ventas_cepas[cols_cepas].sort_values("Fecha").reset_index(drop=True)
+        ventas_cepas = ventas_cepas[cols_cepas_base].sort_values("Fecha").reset_index(drop=True)
     else:
-        ventas_cepas = pd.DataFrame(columns=cols_cepas)
+        ventas_cepas = pd.DataFrame(columns=cols_cepas_base)
 
-    cols_verm = ["Fecha", "Empresa", "Cliente", "NombreFantasia", "Vendedor", "Producto",
-                 "MarcaVermouth", "Proveedor", "NroComprobante", "Tipo", "Cantidad",
-                 "PrecioUnitario", "Total", "TotalNeto"]
+    cols_verm_base = ["Fecha", "Empresa", "Cliente", "NombreFantasia", "Vendedor", "Producto",
+                       "MarcaVermouth", "Proveedor", "NroComprobante", "Tipo", "Cantidad",
+                       "PrecioUnitario", "Total", "TotalNeto"]
     if partes_verm:
         ventas_verm = pd.concat(partes_verm, ignore_index=True)
         ventas_verm = _armar_df_ventas(ventas_verm)
         ventas_verm["Tipo"] = ventas_verm["Tipo comprobante"].map({"FAC": "FC", "NC": "NC"}).fillna(ventas_verm["Tipo comprobante"])
         ventas_verm["MarcaVermouth"] = ventas_verm["Producto"].apply(clasificar_marca_vermouth)
         ventas_verm = ventas_verm.rename(columns={"proveedor": "Proveedor"})
-        for c in cols_verm:
+        for c in cols_verm_base:
             if c not in ventas_verm.columns:
                 ventas_verm[c] = pd.NA
-        ventas_verm = ventas_verm[cols_verm].sort_values("Fecha").reset_index(drop=True)
+        ventas_verm = ventas_verm[cols_verm_base].sort_values("Fecha").reset_index(drop=True)
     else:
-        ventas_verm = pd.DataFrame(columns=cols_verm)
+        ventas_verm = pd.DataFrame(columns=cols_verm_base)
+
+    print("  Sucursales de clientes (cadenas con más de un local)...")
+    sucursales = fetch_sucursales(fecha_desde_str)
+    ventas_cepas = _agregar_sucursal(ventas_cepas, sucursales)
+    ventas_verm = _agregar_sucursal(ventas_verm, sucursales)
+    ventas_cepas = ventas_cepas[cols_cepas_base[:3] + ["Sucursal"] + cols_cepas_base[3:]]
+    ventas_verm = ventas_verm[cols_verm_base[:3] + ["Sucursal"] + cols_verm_base[3:]]
 
     return ventas_cepas, ventas_verm
 
