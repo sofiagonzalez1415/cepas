@@ -399,8 +399,10 @@ with tab_clientes:
         f"**{info_q['cantidad']} clientes**"
     )
     if info_q["cantidad"] > 0:
+        nf_map = M.mapa_nombre_fantasia(ventas)
         tabla_det = pd.DataFrame({
             "Razón Social": [M.razon_social(c[0]) for c in info_q["clientes"]],
+            "Nombre de Fantasía": [nf_map.get(c[0]) or "" for c in info_q["clientes"]],
             "Sucursal": [c[1] for c in info_q["clientes"]],
         })
         st.dataframe(tabla_det, use_container_width=True, hide_index=True)

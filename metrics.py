@@ -190,6 +190,14 @@ def mapa_vendedor_por_cliente(ventas):
     return d.groupby("Cliente")["Vendedor"].last().apply(vendedor_nombre).to_dict()
 
 
+def mapa_nombre_fantasia(ventas):
+    """{Cliente: NombreFantasia} — para mostrar el nombre de fantasía junto
+    a la sucursal (ej. para identificar cuál de los locales de una cadena
+    es la Casa Central). Es un dato a nivel Cliente, no por Sucursal — no
+    siempre lo distingue, pero ayuda a reconocer al cliente."""
+    return ventas.groupby("Cliente")["NombreFantasia"].first().to_dict()
+
+
 # ── Resultados mensuales por SKU ─────────────────────────────────────────
 
 def resultados_mensuales_por_producto(ventas, col_marca="Marca"):
