@@ -400,12 +400,16 @@ with tab_clientes:
     )
     if info_q["cantidad"] > 0:
         nf_map = M.mapa_nombre_fantasia(ventas)
+        detalle = info_q["detalle"]
         tabla_det = pd.DataFrame({
-            "Razón Social": [M.razon_social(c[0]) for c in info_q["clientes"]],
-            "Nombre de Fantasía": [nf_map.get(c[0]) or "" for c in info_q["clientes"]],
-            "Sucursal": [c[1] for c in info_q["clientes"]],
-        })
-        st.dataframe(tabla_det, use_container_width=True, hide_index=True)
+            "Razón Social": detalle["Cliente"].apply(M.razon_social),
+            "Nombre de Fantasía": detalle["Cliente"].map(nf_map).fillna(""),
+            "Sucursal": detalle["Sucursal"],
+            "Unidades": detalle["Unidades"],
+            "Total": detalle["Total"],
+        }).sort_values("Total", ascending=False).reset_index(drop=True)
+        tabla_det_estilo = estilizar_tabla(tabla_det, money_cols=["Total"], int_cols=["Unidades"])
+        st.dataframe(tabla_det_estilo, use_container_width=True, hide_index=True)
     else:
         st.info("Sin compras de esta marca en el trimestre seleccionado.")
 

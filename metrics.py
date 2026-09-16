@@ -364,9 +364,12 @@ def _rango_trimestre_cortado(año, q, fecha_corte=None):
 
 
 def clientes_por_marca_trimestre(ventas, marcas=None, año=None, fecha_corte=None, col_marca="Marca"):
-    """{marca: {Q1: {"clientes": [...], "cantidad": n, "ini":.., "fin":..},
+    """{marca: {Q1: {"clientes": [...], "detalle": DataFrame(Cliente,
+    Sucursal, Unidades, Total), "cantidad": n, "ini":.., "fin":..},
                 Q2: {...}, Q3: {...}}} — Q3 puede estar parcial si es el
-    trimestre en curso."""
+    trimestre en curso. 'clientes' es la lista de (Cliente, Sucursal)
+    distintos (para contar/comparar); 'detalle' suma cuánto le vendimos a
+    cada uno en ese trimestre."""
     marcas = marcas or MARCAS_PRINCIPALES
     fecha_corte = fecha_corte or pd.Timestamp.now().normalize()
     año = año or fecha_corte.year
@@ -376,14 +379,14 @@ def clientes_por_marca_trimestre(ventas, marcas=None, año=None, fecha_corte=Non
         out[marca] = {}
         for q in (1, 2, 3):
             ini, fin = _rango_trimestre_cortado(año, q, fecha_corte)
-            mask = (d["Fecha"] >= ini) & (d["Fecha"] <= fin)
-            suc = d.loc[mask, "Sucursal"].fillna("") if "Sucursal" in d.columns else ""
-            clientes = sorted(set(
-                d.loc[mask, ["Cliente"]].assign(Sucursal=suc)[["Cliente", "Sucursal"]]
-                 .itertuples(index=False, name=None)
-            ))
+            dd = d[(d["Fecha"] >= ini) & (d["Fecha"] <= fin)].copy()
+            dd["Sucursal"] = dd["Sucursal"].fillna("") if "Sucursal" in dd.columns else ""
+            detalle = dd.groupby(["Cliente", "Sucursal"]).agg(
+                Unidades=("Cantidad", "sum"), Total=("Total", "sum"),
+            ).reset_index().sort_values(["Cliente", "Sucursal"]).reset_index(drop=True)
+            clientes = sorted(set(detalle[["Cliente", "Sucursal"]].itertuples(index=False, name=None)))
             out[marca][f"Q{q}"] = {
-                "clientes": clientes, "cantidad": len(clientes),
+                "clientes": clientes, "detalle": detalle, "cantidad": len(clientes),
                 "ini": ini.date(), "fin": fin.date(),
                 "parcial": fin < (_inicio_trimestre(año, q + 1) - pd.Timedelta(days=1)),
             }
