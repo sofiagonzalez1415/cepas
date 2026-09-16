@@ -406,9 +406,8 @@ with tab_clientes:
             "Nombre de Fantasía": detalle["Cliente"].map(nf_map).fillna(""),
             "Sucursal": detalle["Sucursal"],
             "Unidades": detalle["Unidades"],
-            "Total": detalle["Total"],
-        }).sort_values("Total", ascending=False).reset_index(drop=True)
-        tabla_det_estilo = estilizar_tabla(tabla_det, money_cols=["Total"], int_cols=["Unidades"])
+        }).sort_values("Unidades", ascending=False).reset_index(drop=True)
+        tabla_det_estilo = estilizar_tabla(tabla_det, int_cols=["Unidades"])
         st.dataframe(tabla_det_estilo, use_container_width=True, hide_index=True)
     else:
         st.info("Sin compras de esta marca en el trimestre seleccionado.")
