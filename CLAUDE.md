@@ -59,6 +59,53 @@ proveedor, solo falta que el nombre matchee alguna regla (si no, cae en
 "Otros vermouth", que sirve de red de contención — revisar esa categoría
 de tanto en tanto por si aparece algo nuevo sin clasificar).
 
+## Hallazgo: contar clientes por sucursal, no por razón social (2026-09-15/17)
+
+Sofia detectó que el panel contaba clientes-cadena con varias sucursales
+(ej. **Distrijoyita SRL**) como un solo cliente. Investigado en vivo contra
+BSGestión (con VPN activa):
+
+- El SP `gr_reporteFacturacionPorItem` (fuente de `Datos Ventas` /
+  `Datos Vermouth`) **no trae sucursal** — el campo `Cliente` es
+  código+razón social nomás, y BSGestión sí puede tener **dos códigos de
+  cliente distintos con la misma razón social** (Distrijoyita: `(01169)` y
+  `(00347)`), además de varias sucursales bajo un mismo código.
+- BSGestión sí trackea sucursales de verdad: pantalla del cliente →
+  sección "Sucursales" (código, ciudad, activa — ver ficha de "Oviedart
+  Sabores Estrategicos S.A." con Casa Central + 4 locales). Esa tabla es
+  `fw_din_branch` (`description` = nombre del local, `ID` = el mismo valor
+  que `ac_co_din_comprobantes.IDSUCURSAL` de cada comprobante).
+- El campo `NroComprobante` que trae el SP tiene un sufijo de texto libre
+  que A VECES parece el nombre del local ("0001-00002300 - LA COPETERIA")
+  pero **no es confiable** — typos, abreviaturas ("GDV"), notas de entrega
+  ("GALPON LLEVA JESSI"). Se descartó como fuente y se usa la tabla real.
+
+**Fix implementado:**
+- `extract_data.py::fetch_sucursales()` — SELECT directo (no SP) a
+  `ac_co_din_comprobantes JOIN fw_din_branch ON fw_din_branch.ID =
+  ac_co_din_comprobantes.IDSUCURSAL`, por tramos de 180 días. Se cruza
+  contra `Datos Ventas`/`Datos Vermouth` por (fecha, punto de venta,
+  número de comprobante) — `_parse_nro_comprobante()` extrae esos dos
+  últimos del campo `NroComprobante` del SP, ignorando su sufijo de texto.
+  Clientes de un solo local (la gran mayoría) quedan con `Sucursal` vacío.
+- `metrics.py` — todo conteo de clientes distintos (`mix_por_marca`,
+  `ranking_clientes`, `clientes_por_marca_trimestre`, `clientes_overlap`,
+  `ranking_marcas_vermouth`, `ranking_productos`,
+  `ranking_productos_ytd`) pasó de `nunique` sobre `Cliente` a contar
+  combinaciones **(Cliente, Sucursal)** vía el helper `_contar_clientes()`.
+  Nueva función `etiqueta_cliente()` arma el label para mostrar ("RAZÓN
+  SOCIAL — Sucursal").
+- `dashboard.py` — el detalle de clientes por marca/trimestre (pestaña
+  Clientes) y el ranking de clientes muestran ahora Razón Social, **Nombre
+  de Fantasía** (para identificar a simple vista cuál sucursal es, ej. la
+  Casa Central) y Sucursal por separado, más **Unidades** vendidas a cada
+  uno en ese trimestre (sin Total — a pedido, se sacó para dejar la tabla
+  más simple). Los listados de overlap Vermouth (Martini Rosso vs Cinzano)
+  también usan `etiqueta_cliente()`.
+
+Verificado con datos reales: Distrijoyita pasó de contarse 1 vez a 2
+(Galpón de Vinos / La Copetería), clientes de Martini Rosso 54→56.
+
 ## Arquitectura
 
 ```
@@ -143,14 +190,16 @@ empieza a pasar objetivos, replicar el patrón de
 
 **Clientes por marca y trimestre, con detalle (pestaña Clientes):**
 `clientes_por_marca_trimestre()` en `metrics.py` arma, para cada una de las
-4 marcas principales, el listado de clientes distintos que compraron en
-Q1, Q2 y lo que va de Q3 del año en curso (Q3 se corta a la fecha de hoy,
-marcado como "parcial" — no es un trimestre cerrado). El dashboard muestra
-primero una tabla resumen (cantidad por marca x trimestre) y después un
-selector Marca + Trimestre para ver el listado completo de clientes
-(razón social) de esa combinación puntual — a diferencia de Panel Campari,
-que solo mostraba conteos agregados, acá el pedido explícito fue "cantidad
-e identificarlos".
+4 marcas principales, el listado de clientes distintos (Cliente+Sucursal,
+ver hallazgo de sucursales arriba) que compraron en Q1, Q2 y lo que va de
+Q3 del año en curso (Q3 se corta a la fecha de hoy, marcado como
+"parcial" — no es un trimestre cerrado). El dashboard muestra primero una
+tabla resumen (cantidad por marca x trimestre) y después un selector Marca
++ Trimestre para ver el detalle completo (razón social, nombre de
+fantasía, sucursal y unidades vendidas) de esa combinación puntual — a
+diferencia de Panel Campari, que solo mostraba conteos agregados, acá el
+pedido explícito fue "cantidad e identificarlos", y después "qué cantidad
+le vendimos a cada uno".
 
 **Comparación de vermouth con overlap de clientes:** además del ranking de
 unidades/clientes por marca, `clientes_overlap()` calcula cuántos clientes
